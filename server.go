@@ -36,8 +36,9 @@ import (
 //go:embed web/*
 var assets embed.FS
 
-const appVersion = "0.10.0"
+const appVersion = "1.0.0"
 const maxQty int64 = 1_000_000_000_000
+const backupRetention = 30
 
 type Workspace struct {
 	ID       string `json:"id"`
@@ -313,11 +314,20 @@ func (st *Store) backup() (string, error) {
 		return "", e
 	}
 	defer in.Close()
-	out, e := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	out, e := os.CreateTemp(dir, ".yarus-backup-*.tmp")
 	if e != nil {
 		return "", e
 	}
-	_, e = io.Copy(out, in)
+	temp := out.Name()
+	ok := false
+	defer func() {
+		_ = out.Close()
+		if !ok {
+			_ = os.Remove(temp)
+		}
+	}()
+	var copied int64
+	copied, e = io.Copy(out, in)
 	if e == nil {
 		e = out.Sync()
 	}
@@ -325,10 +335,45 @@ func (st *Store) backup() (string, error) {
 	if e == nil {
 		e = ce
 	}
+	if e == nil {
+		var info os.FileInfo
+		info, e = in.Stat()
+		if e == nil && info.Size() != copied {
+			e = io.ErrShortWrite
+		}
+	}
+	if e == nil {
+		e = os.Rename(temp, dest)
+	}
 	if e != nil {
 		return "", e
 	}
+	ok = true
+	if e = pruneBackups(dir, backupRetention); e != nil {
+		log.Println("BACKUP PRUNE:", e)
+	}
 	return dest, nil
+}
+
+func pruneBackups(dir string, keep int) error {
+	entries, e := os.ReadDir(dir)
+	if e != nil {
+		return e
+	}
+	files := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "yarus-") && strings.HasSuffix(entry.Name(), ".journal") {
+			files = append(files, entry.Name())
+		}
+	}
+	sort.Strings(files)
+	for len(files) > keep {
+		if e = os.Remove(filepath.Join(dir, files[0])); e != nil {
+			return e
+		}
+		files = files[1:]
+	}
+	return nil
 }
 
 // RFC 8018 PBKDF2-HMAC-SHA256; separate random salt per account.
@@ -938,14 +983,20 @@ func addresses(listen string) []string {
 	if e != nil {
 		port = "8787"
 	}
+	seen := map[string]bool{}
 	out := []string{}
 	as, _ := net.InterfaceAddrs()
 	for _, a := range as {
 		ip, _, _ := net.ParseCIDR(a.String())
-		if ip != nil && !ip.IsLoopback() && ip.To4() != nil {
-			out = append(out, "http://"+ip.String()+":"+port)
+		if ip != nil && !ip.IsLoopback() && ip.To4() != nil && !ip.IsLinkLocalUnicast() {
+			address := "http://" + ip.String() + ":" + port
+			if !seen[address] {
+				seen[address] = true
+				out = append(out, address)
+			}
 		}
 	}
+	sort.Strings(out)
 	return out
 }
 func openURL(url string) {
@@ -980,7 +1031,23 @@ func main() {
 	dir := flag.String("data", defaultDir, "Data directory")
 	listen := flag.String("listen", "0.0.0.0:8787", "Listen address; use 127.0.0.1 behind a local HTTPS proxy")
 	headless := flag.Bool("headless", false, "Do not open interface")
+	portable := flag.Bool("portable", false, "Store data next to the executable")
 	flag.Parse()
+	dataWasSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "data" {
+			dataWasSet = true
+		}
+	})
+	if runtime.GOOS == "windows" && !dataWasSet {
+		if executable, err := os.Executable(); err == nil {
+			root := filepath.Dir(executable)
+			_, markerErr := os.Stat(filepath.Join(root, "YARUS-PORTABLE.flag"))
+			if *portable || markerErr == nil {
+				*dir = filepath.Join(root, "data")
+			}
+		}
+	}
 	_ = os.MkdirAll(*dir, 0700)
 	// A TCP listener is acquired BEFORE the journal is opened: prevents two standard instances.
 	ln, e := net.Listen("tcp", *listen)

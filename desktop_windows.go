@@ -4,8 +4,7 @@ package main
 
 // A small native Win32 host for the installed Microsoft WebView2 Runtime.
 // No external browser, Node integration, remote executable code, or embedded server keys.
-// The internal runtime entrypoint discovery follows wailsapp/go-webview2 (ISC license).
-// This host is cross-compiled in Linux; actual Windows runtime validation is still required.
+// The official Microsoft WebView2Loader.dll is shipped beside YARUS.exe.
 import (
 	"encoding/json"
 	"errors"
@@ -14,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -210,45 +208,16 @@ func winProcedure(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 	return r
 }
 
-func readRegistryString(root syscall.Handle, subkey, name string) string {
-	var key syscall.Handle
-	if syscall.RegOpenKeyEx(root, wstr(subkey), 0, syscall.KEY_READ|0x200, &key) != nil {
-		return ""
+func findLoaderDLL() (string, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return "", err
 	}
-	defer syscall.RegCloseKey(key)
-	var typ, n uint32
-	if syscall.RegQueryValueEx(key, wstr(name), nil, &typ, nil, &n) != nil || n == 0 || n > 32768 {
-		return ""
+	path := filepath.Join(filepath.Dir(executable), "WebView2Loader.dll")
+	if info, statErr := os.Stat(path); statErr == nil && !info.IsDir() {
+		return path, nil
 	}
-	b := make([]uint16, (n+1)/2)
-	if syscall.RegQueryValueEx(key, wstr(name), nil, &typ, (*byte)(unsafe.Pointer(&b[0])), &n) != nil {
-		return ""
-	}
-	return syscall.UTF16ToString(b)
-}
-func findRuntimeDLL() (string, error) {
-	key := `Software\Microsoft\EdgeUpdate\ClientState\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`
-	var candidates []string
-	for _, root := range []syscall.Handle{syscall.HKEY_LOCAL_MACHINE, syscall.HKEY_CURRENT_USER} {
-		if base := readRegistryString(root, key, "EBWebView"); filepath.IsAbs(base) {
-			candidates = append(candidates, filepath.Join(base, "EBWebView", "x64", "EmbeddedBrowserWebView.dll"))
-		}
-	}
-	// Normal per-user / all-user Evergreen locations; no arbitrary working-directory DLLs.
-	for _, base := range []string{os.Getenv("ProgramFiles(x86)"), os.Getenv("ProgramFiles"), os.Getenv("LOCALAPPDATA")} {
-		if base == "" {
-			continue
-		}
-		matches, _ := filepath.Glob(filepath.Join(base, "Microsoft", "EdgeWebView", "Application", "*", "EBWebView", "x64", "EmbeddedBrowserWebView.dll"))
-		sort.Sort(sort.Reverse(sort.StringSlice(matches)))
-		candidates = append(candidates, matches...)
-	}
-	for _, p := range candidates {
-		if info, e := os.Stat(p); e == nil && !info.IsDir() {
-			return p, nil
-		}
-	}
-	return "", errors.New("Не найден Microsoft Edge WebView2 Runtime. Это системный компонент для окна ЯРУС, а не браузерная версия приложения. Установите Evergreen Runtime x64 по инструкции в архиве и запустите ЯРУС снова. Ваши данные не удалены.")
+	return "", errors.New("Рядом с YARUS.exe нет WebView2Loader.dll. Полностью распакуйте архив ЯРУС и запустите приложение снова. Данные не удалены")
 }
 
 func desktopUI(address string) error {
@@ -273,7 +242,7 @@ func desktopUI(address string) error {
 	if dpi.Find() == nil {
 		dpi.Call(^uintptr(3))
 	}
-	dllPath, err := findRuntimeDLL()
+	dllPath, err := findLoaderDLL()
 	if err != nil {
 		return err
 	}
@@ -281,18 +250,24 @@ func desktopUI(address string) error {
 	if err != nil {
 		return fmt.Errorf("WebView2: %w", err)
 	}
-	create, err := winEnvironmentDLL.FindProc("CreateWebViewEnvironmentWithOptionsInternal")
+	create, err := winEnvironmentDLL.FindProc("CreateCoreWebView2EnvironmentWithOptions")
 	if err != nil {
 		return fmt.Errorf("Компонент WebView2 несовместим. Обновите Evergreen Runtime. %w", err)
 	}
 	profile := filepath.Join(os.Getenv("LOCALAPPDATA"), "Yarus", "desktop-webview")
+	if executable, executableErr := os.Executable(); executableErr == nil {
+		root := filepath.Dir(executable)
+		if _, markerErr := os.Stat(filepath.Join(root, "YARUS-PORTABLE.flag")); markerErr == nil {
+			profile = filepath.Join(root, "data", "desktop-webview")
+		}
+	}
 	if err = os.MkdirAll(profile, 0700); err != nil {
 		return err
 	}
 	instance, _, _ := wp(winKernel, "GetModuleHandleW").Call(0)
 	cursor, _, _ := wp(winUser, "LoadCursorW").Call(0, 32512)
 	icon, _, _ := wp(winUser, "LoadIconW").Call(instance, 1)
-	class := winClass{Size: uint32(unsafe.Sizeof(winClass{})), Style: 3, Proc: syscall.NewCallback(winProcedure), Instance: instance, Cursor: cursor, Icon: icon, SmallIcon: icon, Background: 6, Name: wstr("YarusDesktop010")}
+	class := winClass{Size: uint32(unsafe.Sizeof(winClass{})), Style: 3, Proc: syscall.NewCallback(winProcedure), Instance: instance, Cursor: cursor, Icon: icon, SmallIcon: icon, Background: 6, Name: wstr("YarusDesktop100")}
 	if r, _, e := wp(winUser, "RegisterClassExW").Call(uintptr(unsafe.Pointer(&class))); r == 0 {
 		return fmt.Errorf("Окно ЯРУС: %w", e)
 	}
@@ -383,7 +358,7 @@ func desktopUI(address string) error {
 	for _, key := range []string{"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER", "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "WEBVIEW2_USER_DATA_FOLDER"} {
 		os.Setenv(key, "")
 	}
-	hr, _, _ = create.Call(1, 0, uintptr(unsafe.Pointer(wstr(profile))), environmentOptions(), envCallback)
+	hr, _, _ = create.Call(0, uintptr(unsafe.Pointer(wstr(profile))), environmentOptions(), envCallback)
 	if int32(hr) < 0 {
 		wp(winUser, "DestroyWindow").Call(winWindow)
 		return fmt.Errorf("Запуск WebView2: 0x%x. Обновите WebView2 Runtime.", hr)

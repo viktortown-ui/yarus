@@ -2,6 +2,7 @@ package ru.viktortown.yarus;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.os.Build;
 import android.content.Intent;
 import android.webkit.WebView;
 import android.webkit.WebSettings;
@@ -9,12 +10,13 @@ import android.webkit.WebChromeClient;
 import android.webkit.ValueCallback;
 import android.net.Uri;
 import android.widget.Toast;
+import android.view.WindowInsets;
+import android.window.OnBackInvokedDispatcher;
 import java.util.Scanner;
 import java.io.OutputStream;
 
 /** Local assets, persistent WebView storage, and explicit user-selected file IO.
  * No remote website is loaded into the bridge-enabled WebView.
- * Device/ART smoke tests are required before distribution beyond private beta.
  */
 public class MainActivity extends Activity {
     public WebView web;
@@ -28,12 +30,18 @@ public class MainActivity extends Activity {
             requestWindowFeature(1);
             getWindow().setStatusBarColor(0xff153f3b);
             getWindow().setNavigationBarColor(0xff153f3b);
+            if (Build.VERSION.SDK_INT >= 35) {
+                getWindow().setNavigationBarContrastEnforced(false);
+            }
             web = new WebView(this);
             WebSettings settings = web.getSettings();
             settings.setJavaScriptEnabled(true);
             settings.setDomStorageEnabled(true);
             settings.setMediaPlaybackRequiresUserGesture(false);
             settings.setAllowFileAccess(false);
+            settings.setAllowFileAccessFromFileURLs(false);
+            settings.setAllowUniversalAccessFromFileURLs(false);
+            if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
             // Access only content URIs explicitly selected through the system file picker.
             settings.setAllowContentAccess(true);
             // The app validates plain HTTP endpoints as private literal IPs only.
@@ -42,6 +50,11 @@ public class MainActivity extends Activity {
             web.setWebChromeClient(new ChromeClient(this));
             web.addJavascriptInterface(new Bridge(this), "AndroidFiles");
             setContentView(web);
+            applySystemInsets();
+            if (Build.VERSION.SDK_INT >= 33) {
+                getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                        OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
+            }
             Scanner scanner = new Scanner(getAssets().open("index.html"), "UTF-8");
             scanner.useDelimiter("\\A");
             String html = scanner.next();
@@ -54,9 +67,29 @@ public class MainActivity extends Activity {
         }
     }
 
-    @Override public void onBackPressed() {
-        if (web == null) { super.onBackPressed(); return; }
+    private void applySystemInsets() {
+        web.setOnApplyWindowInsetsListener((view, insets) -> {
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets bars = insets.getInsets(
+                        WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            } else {
+                view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                        insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+            }
+            return insets;
+        });
+    }
+
+    private void handleBack() {
+        if (web == null) { finish(); return; }
         web.evaluateJavascript("if(typeof yarusScanSession!=='undefined'&&yarusScanSession){closeScanner();}else if(document.querySelector('#modal-root .modal')){closeModal();}else if(typeof page==='string'&&page!=='home'&&state){page='home';render();}else{AndroidFiles.closeApp();}", null);
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override public void onBackPressed() {
+        if (Build.VERSION.SDK_INT < 33) handleBack();
+        else super.onBackPressed();
     }
 
     /** Called on the UI thread by CameraPermissionTask. Only our local origin and video. */

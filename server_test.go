@@ -444,3 +444,33 @@ func TestFactoryCodeCannotBeAssignedTwice(t *testing.T) {
 		t.Fatal("duplicate barcode altered stock/catalog")
 	}
 }
+
+func TestBackupRotationKeepsNewestThirty(t *testing.T) {
+	dir := t.TempDir()
+	st, err := openStore(filepath.Join(dir, "yarus.journal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.file.Close()
+	for i := 0; i < backupRetention+3; i++ {
+		if _, err = st.backup(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "backups"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "yarus-") && strings.HasSuffix(entry.Name(), ".journal") {
+			count++
+		}
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Fatalf("temporary backup remained: %s", entry.Name())
+		}
+	}
+	if count != backupRetention {
+		t.Fatalf("kept %d backups, want %d", count, backupRetention)
+	}
+}

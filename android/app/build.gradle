@@ -1,11 +1,51 @@
 plugins { id 'com.android.application' }
+
+def releaseStoreFile = System.getenv('YARUS_KEYSTORE_FILE')
+def releaseStorePassword = System.getenv('YARUS_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('YARUS_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('YARUS_KEY_PASSWORD')
+
 android {
     namespace 'ru.viktortown.yarus'
-    compileSdk 35
-    defaultConfig { applicationId 'ru.viktortown.yarus'; minSdk 26; targetSdk 32; versionCode 1000; versionName '0.10.0 beta' }
-    buildTypes { release { minifyEnabled false } }
+    compileSdk 36
+    defaultConfig {
+        applicationId 'ru.viktortown.yarus'
+        minSdk 24
+        targetSdk 36
+        versionCode 2026092001
+        versionName '1.0.0'
+    }
+    signingConfigs {
+        release {
+            if (releaseStoreFile) {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing true
+            }
+        }
+    }
+    buildTypes {
+        debug { applicationIdSuffix '.debug'; versionNameSuffix '-debug' }
+        release {
+            minifyEnabled false
+            if (releaseStoreFile) signingConfig signingConfigs.release
+        }
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
-// Private beta target SDK is deliberate. Upgrade target SDK and re-test all
-// insets, file dialogs and network permissions before any store submission.
-// Sign release using the owner's private keystore, never a committed password.
+
+tasks.register('verifyReleaseSigning') {
+    doLast {
+        if (!releaseStoreFile || !releaseStorePassword || !releaseKeyAlias || !releaseKeyPassword) {
+            throw new GradleException('Release signing variables YARUS_KEYSTORE_* are required.')
+        }
+    }
+}
+tasks.matching { it.name in ['assembleRelease', 'bundleRelease'] }.configureEach {
+    dependsOn tasks.named('verifyReleaseSigning')
+}

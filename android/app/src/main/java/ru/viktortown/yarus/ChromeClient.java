@@ -18,7 +18,9 @@ public class ChromeClient extends WebChromeClient {
         activity.fileCallback = callback;
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
+        String[] accepted = params == null ? null : params.getAcceptTypes();
+        intent.setType(accepted != null && accepted.length == 1 && accepted[0] != null
+                && !accepted[0].isEmpty() ? accepted[0] : "*/*");
         activity.startActivityForResult(intent, 1002);
         return true;
     }

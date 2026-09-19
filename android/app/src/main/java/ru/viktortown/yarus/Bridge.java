@@ -9,4 +9,7 @@ public class Bridge {
     @JavascriptInterface public void closeApp() {
         activity.runOnUiThread(new ExportTask(activity, null, null, null));
     }
+    @JavascriptInterface public void updateWidget(int items, int low, String value, String workspace) {
+        activity.runOnUiThread(() -> YarusWidgetProvider.updateAll(activity, items, low, value, workspace));
+    }
 }

@@ -25,7 +25,7 @@ async def mount(browser,width=1440,height=1000):
  html=re.sub(r'<script src="[^"]+"></script>', '', html)
  html=re.sub(r'<meta http-equiv="Content-Security-Policy"[^>]+>', '', html)
  await page.set_content(html)
- for name in ['domain.js','vendor/qr-encode.js','vendor/qr-decode.js','vendor/code128-patterns.js','codes.js','scanner.js']:
+ for name in ['domain.js','vendor/qr-encode.js','vendor/qr-decode.js','vendor/code128-patterns.js','codes.js','reports.js','scanner.js']:
   await page.add_script_tag(content=(ROOT/'web'/name).read_text())
  js=(ROOT/'web'/'app.js').read_text();assert js.rstrip().endswith('init();');js=js.rstrip()[:-7]+ADAPTER
  await page.add_script_tag(content=js)

@@ -1,4 +1,4 @@
-ЯРУС 0.10.0 — сторонние компоненты / Third-party notices
+ЯРУС 1.0.0 — сторонние компоненты / Third-party notices
 
 QR encoder: QRCode, Copyright (c) 2009 Kazuhiko Arase, MIT.
 Locally bundled from qrcode-terminal/vendor/QRCode. Wrapper changed for YARUS.
@@ -253,9 +253,9 @@ Retained algorithm derivation; full Apache-2.0 license follows.
    See the License for the specific language governing permissions and
    limitations under the License.
 
-Windows runtime loader discovery and interface reference:
+Windows COM interface reference:
 wailsapp/go-webview2, https://github.com/wailsapp/go-webview2
-New minimal Win32 host in YARUS; not an official Microsoft binary.
+The Win32 host is implemented in YARUS.
 
 ISC License (ISC)
 Copyright (c) 2020 John Chadwick
@@ -272,6 +272,11 @@ INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
 LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
+
+Microsoft Edge WebView2 SDK / WebView2Loader.dll 1.0.4191.47.
+Copyright (c) Microsoft Corporation. All rights reserved.
+The original Microsoft license and notice are shipped in the licenses folder:
+Microsoft.WebView2.LICENSE.txt and Microsoft.WebView2.NOTICE.txt.
 
 Code128 standard patterns: generated from ReportLab data table.
 ReportLab is used for test fixture generation, not shipped as a runtime.
