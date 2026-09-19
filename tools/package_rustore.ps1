@@ -31,7 +31,7 @@ if (Get-ChildItem -LiteralPath $target -Recurse -File | Where-Object { $_.Name -
 $hashFiles = Get-ChildItem -LiteralPath $target -Recurse -File | Where-Object { $_.Name -ne 'SHA256SUMS-ALL.txt' }
 $hashFiles | Get-FileHash -Algorithm SHA256 | Sort-Object Path |
     ForEach-Object { "$($_.Hash.ToLowerInvariant())  $($_.Path.Substring($target.Length + 1).Replace('\','/'))" } |
-    Set-Content -LiteralPath (Join-Path $target 'SHA256SUMS-ALL.txt') -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $target 'SHA256SUMS-ALL.txt') -Encoding utf8
 
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
 Compress-Archive -LiteralPath $target -DestinationPath $zip -CompressionLevel Optimal
