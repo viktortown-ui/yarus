@@ -1,0 +1,16 @@
+/dist/
+/.tooling/
+/tmp/
+*.exe
+*.apk
+*.journal
+*.lock
+*.jks
+*.p12
+*.pem
+local.properties
+.gradle/
+**/build/
+__pycache__/
+yarus-private-signing/
+.env

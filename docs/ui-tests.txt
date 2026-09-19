@@ -1,0 +1,11 @@
+PASS: demo creates 12 products and independent demo workspace
+PASS: search, item detail and item creation through visible controls
+PASS: fractional receipt 5.125 updates exact integer stock
+PASS: insufficient stock shown as a visible error, no false success
+PASS: tablet 834×1112, no horizontal page overflow
+PASS: mobile 390×844, no horizontal page overflow
+PASS: small-phone 360×780, no horizontal page overflow
+PASS: theme switching and mobile settings
+PASS: no uncaught JavaScript errors in exercised UI flows
+
+Storage: explicit in-memory test adapter. Native IndexedDB/device execution not tested in this UI run.

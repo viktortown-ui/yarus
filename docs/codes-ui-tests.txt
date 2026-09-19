@@ -1,0 +1,13 @@
+PASS: unknown EAN bound through controls without changing stock/history
+PASS: uploaded EAN image decoded offline, opens the linked item
+PASS: QR preview round-trip and real UI exports: 12-label A4 PDF, single 70x40 PDF and SVG
+PASS: operation scan preserves typed quantity; insufficient stock shows immediate explanation and blocks commit
+PASS: foreign warehouse QR refused; URL QR treated as text, no navigation
+PASS: simulated permission refusal gives an explanation and manual/image alternatives
+PASS: scanner layout 360x780, dark theme, no horizontal page overflow
+PASS: scanner layout 834x1112, dark theme, no horizontal page overflow
+PASS: scanner layout 1112x834, dark theme, no horizontal page overflow
+PASS: scanner layout 1440x1000, dark theme, no horizontal page overflow
+PASS: place QR applies location filter without inventory movement
+PASS: read-only participant cannot create or bind an unknown code
+NOT TESTED: real camera, native dialogs, IndexedDB; explicit adapters in this run.

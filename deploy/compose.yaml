@@ -1,0 +1,27 @@
+# Pilot template. No ports are exposed directly from the warehouse service.
+services:
+  yarus:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - yarus-data:/data
+    networks: [warehouse]
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [warehouse]
+volumes:
+  yarus-data:
+  caddy-data:
+  caddy-config:
+networks:
+  warehouse:

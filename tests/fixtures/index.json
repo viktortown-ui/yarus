@@ -1,0 +1,110 @@
+[
+  {
+    "name": "qr0",
+    "width": 246,
+    "height": 246,
+    "expected": "YARUS:1:workspace12345678:item:product12345678"
+  },
+  {
+    "name": "qr-rotated",
+    "width": 246,
+    "height": 246,
+    "expected": "YARUS:1:workspace12345678:item:product12345678"
+  },
+  {
+    "name": "qr-smallblur",
+    "width": 246,
+    "height": 246,
+    "expected": "YARUS:1:workspace12345678:item:product12345678"
+  },
+  {
+    "name": "qr-skew",
+    "width": 292,
+    "height": 292,
+    "expected": "YARUS:1:workspace12345678:item:product12345678"
+  },
+  {
+    "name": "qr1",
+    "width": 222,
+    "height": 222,
+    "expected": "YARUS:1:workspace12345678:place:main-place"
+  },
+  {
+    "name": "qr2",
+    "width": 174,
+    "height": 174,
+    "expected": "4601234567893"
+  },
+  {
+    "name": "qr3",
+    "width": 222,
+    "height": 222,
+    "expected": "https://example.org/no-navigation"
+  },
+  {
+    "name": "qr4",
+    "width": 198,
+    "height": 198,
+    "expected": "Кириллица UTF-8"
+  },
+  {
+    "name": "qr5",
+    "width": 558,
+    "height": 558,
+    "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "name": "bar-EAN13-460123456789",
+    "width": 419,
+    "height": 160,
+    "expected": "4601234567893"
+  },
+  {
+    "name": "bar-rotated-EAN13-460123456789",
+    "width": 160,
+    "height": 419,
+    "expected": "4601234567893"
+  },
+  {
+    "name": "bar-EAN8-1234567",
+    "width": 335,
+    "height": 160,
+    "expected": "12345670"
+  },
+  {
+    "name": "bar-rotated-EAN8-1234567",
+    "width": 160,
+    "height": 335,
+    "expected": "12345670"
+  },
+  {
+    "name": "bar-Code128-KAN-005",
+    "width": 476,
+    "height": 160,
+    "expected": "KAN-005"
+  },
+  {
+    "name": "bar-rotated-Code128-KAN-005",
+    "width": 160,
+    "height": 476,
+    "expected": "KAN-005"
+  },
+  {
+    "name": "bar-Code128-001122334455",
+    "width": 443,
+    "height": 160,
+    "expected": "001122334455"
+  },
+  {
+    "name": "bar-rotated-Code128-001122334455",
+    "width": 160,
+    "height": 443,
+    "expected": "001122334455"
+  },
+  {
+    "name": "empty",
+    "width": 480,
+    "height": 320,
+    "expected": null
+  }
+]

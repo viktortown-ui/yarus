@@ -1,0 +1,3 @@
+PASS: Windows x64 cross-build; separate GUI and console subsystems; current shared UI embedded.
+PASS: YARUS.exe has 7 icon sizes and asInvoker manifest.
+NOT TESTED: execution on Windows, WebView2 loader/COM callbacks, camera, file dialogs, real profile storage.

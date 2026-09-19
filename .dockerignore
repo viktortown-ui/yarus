@@ -1,0 +1,9 @@
+.git
+dist
+android
+tests
+docs
+branding
+*.pem
+*.p12
+*.journal

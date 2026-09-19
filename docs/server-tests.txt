@@ -1,0 +1,48 @@
+=== RUN   TestExactFractionalStock
+--- PASS: TestExactFractionalStock (0.00s)
+=== RUN   TestInsufficientStockIsAtomic
+--- PASS: TestInsufficientStockIsAtomic (0.00s)
+=== RUN   TestConcurrentWithdrawals
+--- PASS: TestConcurrentWithdrawals (0.00s)
+=== RUN   TestIdempotencyAndIntentMismatch
+--- PASS: TestIdempotencyAndIntentMismatch (0.00s)
+=== RUN   TestTransferPreservesTotalAndRejectsPartial
+--- PASS: TestTransferPreservesTotalAndRejectsPartial (0.00s)
+=== RUN   TestCountRejectsStaleVersion
+--- PASS: TestCountRejectsStaleVersion (0.00s)
+=== RUN   TestReverseIsAuditedAndSingleUse
+--- PASS: TestReverseIsAuditedAndSingleUse (0.00s)
+=== RUN   TestReverseIncomingCannotCreateNegative
+--- PASS: TestReverseIncomingCannotCreateNegative (0.00s)
+=== RUN   TestViewerAndRevocation
+--- PASS: TestViewerAndRevocation (0.00s)
+=== RUN   TestCatalogRules
+--- PASS: TestCatalogRules (0.00s)
+=== RUN   TestRequestValidation
+--- PASS: TestRequestValidation (0.00s)
+=== RUN   TestAuthenticationAndExportsNoSecrets
+--- PASS: TestAuthenticationAndExportsNoSecrets (0.00s)
+=== RUN   TestInviteSingleUseExpiredAndRoles
+--- PASS: TestInviteSingleUseExpiredAndRoles (0.51s)
+=== RUN   TestSetupCannotBeClaimedWithoutBootstrapKey
+--- PASS: TestSetupCannotBeClaimedWithoutBootstrapKey (1.10s)
+=== RUN   TestJournalRecoveryAndCorruption
+2026/09/16 19:40:24 Recovered an unfinished final journal record; no acknowledged transaction removed.
+--- PASS: TestJournalRecoveryAndCorruption (0.00s)
+=== RUN   TestBackupIsReplayableAndPreservesIdempotency
+--- PASS: TestBackupIsReplayableAndPreservesIdempotency (0.00s)
+=== RUN   TestDiskFailureDoesNotAcknowledge
+2026/09/16 19:40:24 WRITE FAILED: write /tmp/TestDiskFailureDoesNotAcknowledge3941842063/001/yarus.journal: file already closed
+--- PASS: TestDiskFailureDoesNotAcknowledge (0.00s)
+=== RUN   TestUnknownOriginNotGrantedCORS
+--- PASS: TestUnknownOriginNotGrantedCORS (0.00s)
+=== RUN   TestDirectoryLock
+--- PASS: TestDirectoryLock (0.00s)
+=== RUN   TestLegacyNamespaceMigrationIsDurableAndBackedUp
+--- PASS: TestLegacyNamespaceMigrationIsDurableAndBackedUp (0.00s)
+=== RUN   TestRenamePreservesNamespaceAndStock
+--- PASS: TestRenamePreservesNamespaceAndStock (0.00s)
+=== RUN   TestFactoryCodeCannotBeAssignedTwice
+--- PASS: TestFactoryCodeCannotBeAssignedTwice (0.00s)
+PASS
+ok  	yarus	2.671s

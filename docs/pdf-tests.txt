@@ -1,0 +1,4 @@
+PASS: label-a4-example.pdf: 12 label placement(s), exact 70x40 mm, within page; PDF rasterized
+PASS: QR decoded from actual rasterized PDF: QR
+PASS: label-70x40-example.pdf: 1 label placement(s), exact 70x40 mm, within page; PDF rasterized
+NOT TESTED: physical printer, adhesive stock, real camera reading paper.

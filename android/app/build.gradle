@@ -1,0 +1,11 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'ru.viktortown.yarus'
+    compileSdk 35
+    defaultConfig { applicationId 'ru.viktortown.yarus'; minSdk 26; targetSdk 32; versionCode 1000; versionName '0.10.0 beta' }
+    buildTypes { release { minifyEnabled false } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+// Private beta target SDK is deliberate. Upgrade target SDK and re-test all
+// insets, file dialogs and network permissions before any store submission.
+// Sign release using the owner's private keystore, never a committed password.

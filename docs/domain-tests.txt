@@ -1,0 +1,76 @@
+TAP version 13
+# Subtest: decimal exactness, comma and validation
+ok 1 - decimal exactness, comma and validation
+  ---
+  duration_ms: 1.134224
+  type: 'test'
+  ...
+# Subtest: negative stock is rejected without mutating input
+ok 2 - negative stock is rejected without mutating input
+  ---
+  duration_ms: 4.004166
+  type: 'test'
+  ...
+# Subtest: transfer is balanced and atomic
+ok 3 - transfer is balanced and atomic
+  ---
+  duration_ms: 0.534864
+  type: 'test'
+  ...
+# Subtest: stale count rejected, explicit count accepted
+ok 4 - stale count rejected, explicit count accepted
+  ---
+  duration_ms: 0.470648
+  type: 'test'
+  ...
+# Subtest: idempotency and payload collision
+ok 5 - idempotency and payload collision
+  ---
+  duration_ms: 1.057479
+  type: 'test'
+  ...
+# Subtest: reverse is auditable, cannot repeat
+ok 6 - reverse is auditable, cannot repeat
+  ---
+  duration_ms: 0.378859
+  type: 'test'
+  ...
+# Subtest: viewer cannot edit; only owner can reverse
+ok 7 - viewer cannot edit; only owner can reverse
+  ---
+  duration_ms: 0.33265
+  type: 'test'
+  ...
+# Subtest: backup replays stock and catches tampering
+ok 8 - backup replays stock and catches tampering
+  ---
+  duration_ms: 0.866582
+  type: 'test'
+  ...
+# Subtest: catalog constraints and prototype IDs
+ok 9 - catalog constraints and prototype IDs
+  ---
+  duration_ms: 1.10512
+  type: 'test'
+  ...
+# Subtest: CSV quoting, BOM, multiline and formula escape
+ok 10 - CSV quoting, BOM, multiline and formula escape
+  ---
+  duration_ms: 0.748224
+  type: 'test'
+  ...
+# Subtest: random sequence keeps nonnegative totals and round-trips backup
+ok 11 - random sequence keeps nonnegative totals and round-trips backup
+  ---
+  duration_ms: 182.003695
+  type: 'test'
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 249.145187

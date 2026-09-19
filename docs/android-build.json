@@ -1,0 +1,11 @@
+{
+  "package": "ru.viktortown.yarus",
+  "minSdk": 26,
+  "targetSdk": 32,
+  "version": "0.10.0 beta",
+  "dexClasses": 6,
+  "dexMethods": 84,
+  "signature": "APK Signature Scheme v2 / RSA PKCS1 SHA256",
+  "certificateSHA256": "a29fc15f144a08624ea02aa4e06c878bebf12e1d0093b7dac63dfcecdf76fcd1",
+  "runtimeTested": false
+}

@@ -1,0 +1,5 @@
+# Replace with your domain, point its DNS to your VPS, then review deployment.
+warehouse.example.com {
+    encode zstd gzip
+    reverse_proxy yarus:8787
+}

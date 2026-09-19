@@ -1,0 +1,100 @@
+{
+  "format": "yarus-data",
+  "version": 1,
+  "seq": 3,
+  "space": {
+    "name": "Хемиком",
+    "currency": "RUB"
+  },
+  "items": {
+    "legacy-canister": {
+      "id": "legacy-canister",
+      "name": "Канистра",
+      "sku": "КАН-005",
+      "barcode": "04601234567893",
+      "category": "Упаковка",
+      "unit": "шт",
+      "min": 0,
+      "price": 4800,
+      "note": "Прежняя версия",
+      "fields": {
+        "Объём": "5 л"
+      },
+      "archived": false,
+      "version": 1
+    }
+  },
+  "places": {
+    "main-place": {
+      "id": "main-place",
+      "name": "Основной склад",
+      "note": "",
+      "version": 1
+    }
+  },
+  "stocks": {
+    "legacy-canister@main-place": {
+      "item": "legacy-canister",
+      "place": "main-place",
+      "qty": 17000,
+      "version": 2
+    }
+  },
+  "events": [
+    {
+      "id": "legacy-receipt",
+      "kind": "in",
+      "item": "legacy-canister",
+      "from": "",
+      "to": "main-place",
+      "qty": 20000,
+      "note": "",
+      "ref": "",
+      "actor": "local-owner",
+      "actorName": "Вы",
+      "at": "2026-09-16T19:33:19.733Z",
+      "seq": 2,
+      "changes": [
+        {
+          "item": "legacy-canister",
+          "place": "main-place",
+          "qty": 20000
+        }
+      ]
+    },
+    {
+      "id": "legacy-expense",
+      "kind": "out",
+      "item": "legacy-canister",
+      "from": "main-place",
+      "to": "",
+      "qty": 3000,
+      "note": "",
+      "ref": "",
+      "actor": "local-owner",
+      "actorName": "Вы",
+      "at": "2026-09-16T19:33:19.733Z",
+      "seq": 3,
+      "changes": [
+        {
+          "item": "legacy-canister",
+          "place": "main-place",
+          "qty": -3000
+        }
+      ]
+    }
+  ],
+  "eventCount": 2,
+  "me": {
+    "id": "local-owner",
+    "name": "Вы",
+    "login": "local",
+    "role": "owner"
+  },
+  "demo": false,
+  "localSeen": {
+    "legacy-create": "{\"id\":\"legacy-create\",\"type\":\"item\",\"item\":{\"id\":\"legacy-canister\",\"name\":\"Канистра\",\"sku\":\"КАН-005\",\"barcode\":\"04601234567893\",\"category\":\"Упаковка\",\"unit\":\"шт\",\"min\":0,\"price\":4800,\"note\":\"Прежняя версия\",\"fields\":{\"Объём\":\"5 л\"},\"archived\":false,\"version\":0}}",
+    "legacy-receipt": "{\"id\":\"legacy-receipt\",\"type\":\"in\",\"itemId\":\"legacy-canister\",\"to\":\"main-place\",\"qty\":20000}",
+    "legacy-expense": "{\"id\":\"legacy-expense\",\"type\":\"out\",\"itemId\":\"legacy-canister\",\"from\":\"main-place\",\"qty\":3000}"
+  }
+}

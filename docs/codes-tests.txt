@@ -1,0 +1,136 @@
+TAP version 13
+# Subtest: decode fixture: qr0
+ok 1 - decode fixture: qr0
+  ---
+  duration_ms: 29.9108
+  type: 'test'
+  ...
+# Subtest: decode fixture: qr-rotated
+ok 2 - decode fixture: qr-rotated
+  ---
+  duration_ms: 13.730901
+  type: 'test'
+  ...
+# Subtest: decode fixture: qr-smallblur
+ok 3 - decode fixture: qr-smallblur
+  ---
+  duration_ms: 16.048171
+  type: 'test'
+  ...
+# Subtest: decode fixture: qr-skew
+ok 4 - decode fixture: qr-skew
+  ---
+  duration_ms: 15.32821
+  type: 'test'
+  ...
+# Subtest: decode fixture: qr1
+ok 5 - decode fixture: qr1
+  ---
+  duration_ms: 6.547768
+  type: 'test'
+  ...
+# Subtest: decode fixture: qr2
+ok 6 - decode fixture: qr2
+  ---
+  duration_ms: 6.520868
+  type: 'test'
+  ...
+# Subtest: decode fixture: qr3
+ok 7 - decode fixture: qr3
+  ---
+  duration_ms: 7.260839
+  type: 'test'
+  ...
+# Subtest: decode fixture: qr4
+ok 8 - decode fixture: qr4
+  ---
+  duration_ms: 5.414595
+  type: 'test'
+  ...
+# Subtest: decode fixture: qr5
+ok 9 - decode fixture: qr5
+  ---
+  duration_ms: 23.753218
+  type: 'test'
+  ...
+# Subtest: decode fixture: bar-EAN13-460123456789
+ok 10 - decode fixture: bar-EAN13-460123456789
+  ---
+  duration_ms: 7.77416
+  type: 'test'
+  ...
+# Subtest: decode fixture: bar-rotated-EAN13-460123456789
+ok 11 - decode fixture: bar-rotated-EAN13-460123456789
+  ---
+  duration_ms: 3.4812
+  type: 'test'
+  ...
+# Subtest: decode fixture: bar-EAN8-1234567
+ok 12 - decode fixture: bar-EAN8-1234567
+  ---
+  duration_ms: 5.248656
+  type: 'test'
+  ...
+# Subtest: decode fixture: bar-rotated-EAN8-1234567
+ok 13 - decode fixture: bar-rotated-EAN8-1234567
+  ---
+  duration_ms: 2.738374
+  type: 'test'
+  ...
+# Subtest: decode fixture: bar-Code128-KAN-005
+ok 14 - decode fixture: bar-Code128-KAN-005
+  ---
+  duration_ms: 6.197271
+  type: 'test'
+  ...
+# Subtest: decode fixture: bar-rotated-Code128-KAN-005
+ok 15 - decode fixture: bar-rotated-Code128-KAN-005
+  ---
+  duration_ms: 4.986622
+  type: 'test'
+  ...
+# Subtest: decode fixture: bar-Code128-001122334455
+ok 16 - decode fixture: bar-Code128-001122334455
+  ---
+  duration_ms: 6.707758
+  type: 'test'
+  ...
+# Subtest: decode fixture: bar-rotated-Code128-001122334455
+ok 17 - decode fixture: bar-rotated-Code128-001122334455
+  ---
+  duration_ms: 3.195441
+  type: 'test'
+  ...
+# Subtest: decode fixture: empty
+ok 18 - decode fixture: empty
+  ---
+  duration_ms: 5.500164
+  type: 'test'
+  ...
+# Subtest: generated QR round trip
+ok 19 - generated QR round trip
+  ---
+  duration_ms: 12.86603
+  type: 'test'
+  ...
+# Subtest: foreign workspace and malformed tokens do not resolve
+ok 20 - foreign workspace and malformed tokens do not resolve
+  ---
+  duration_ms: 0.733382
+  type: 'test'
+  ...
+# Subtest: EAN checksum rejects modified digit
+ok 21 - EAN checksum rejects modified digit
+  ---
+  duration_ms: 0.118768
+  type: 'test'
+  ...
+1..21
+# tests 21
+# suites 0
+# pass 21
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 245.908559

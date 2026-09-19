@@ -1,0 +1,4 @@
+PASS: exact original 0.9.1 certificate, package, local WebView origin and IndexedDB name retained.
+PASS: final APK HTML equals canonical packed HTML.
+Certificate SHA256: a29fc15f144a08624ea02aa4e06c878bebf12e1d0093b7dac63dfcecdf76fcd1
+NOT TESTED: physical Android update/data migration.
