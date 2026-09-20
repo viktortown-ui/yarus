@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Drawing.Common -ErrorAction Stop
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
 $target = Join-Path $dist 'RuStore'
@@ -29,7 +30,17 @@ foreach ($file in 'ИНСТРУКЦИЯ.html','privacy-policy.html','SHA256SUMS-
 
 Copy-Item -LiteralPath (Join-Path $dist 'android\YARUS-1.1.2-RuStore.apk'),(Join-Path $dist 'android\YARUS-1.1.2-RuStore.aab'),(Join-Path $dist 'android\SHA256SUMS.txt') -Destination $binaries -Force
 Copy-Item -LiteralPath (Join-Path $dist 'android\YARUS-upload-certificate.pem') -Destination $signature -Force
-Copy-Item -LiteralPath (Join-Path $root 'branding\YARUS-512.png') -Destination (Join-Path $icon 'YARUS-icon-512x512.png') -Force
+$storeIcon = Join-Path $root 'branding\YARUS-RuStore-512.png'
+Copy-Item -LiteralPath $storeIcon -Destination (Join-Path $icon 'YARUS-icon-512x512.png') -Force
+$iconBitmap = [Drawing.Bitmap]::new((Join-Path $icon 'YARUS-icon-512x512.png'))
+try {
+    if ($iconBitmap.Width -ne 512 -or $iconBitmap.Height -ne 512) { throw 'RuStore icon must be 512x512.' }
+    foreach ($point in @(@(0,0),@(511,0),@(0,511),@(511,511))) {
+        if ($iconBitmap.GetPixel($point[0], $point[1]).A -ne 255) { throw 'RuStore icon edges must have an opaque background.' }
+    }
+} finally {
+    $iconBitmap.Dispose()
+}
 Copy-Item -Path (Join-Path $root 'rustore\*.txt') -Destination $metadata -Force
 Copy-Item -LiteralPath (Join-Path $root 'docs\privacy-policy.html') -Destination (Join-Path $target 'privacy-policy.html') -Force
 Copy-Item -LiteralPath (Join-Path $root 'docs\ИНСТРУКЦИЯ-1.1.2.html') -Destination (Join-Path $target 'ИНСТРУКЦИЯ.html') -Force
