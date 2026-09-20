@@ -92,13 +92,13 @@ Compress-Archive -LiteralPath $sourceFolder -DestinationPath $sourceZip -Compres
 Copy-Item -LiteralPath (Join-Path $dist "windows\YARUS-$version-Windows-x64.zip") -Destination $github
 Copy-Item -LiteralPath (Join-Path $dist "android\YARUS-$version-RuStore.apk") -Destination (Join-Path $github "YARUS-$version-Android.apk")
 Copy-Item -LiteralPath (Join-Path $root 'rustore\03-release-notes.txt') -Destination (Join-Path $github 'RELEASE-NOTES.txt')
-Copy-Item -LiteralPath (Join-Path $root 'docs\ОТКРОЙТЕ-СНАЧАЛА.txt') -Destination (Join-Path $github 'НАЧАТЬ.txt')
+Copy-Item -LiteralPath (Join-Path $root 'docs\ОТКРОЙТЕ-СНАЧАЛА.txt') -Destination (Join-Path $github 'START-HERE-RU.txt')
 $publicFiles = Get-ChildItem -LiteralPath $github -File | Where-Object Name -ne 'SHA256SUMS.txt'
 $publicFiles | Get-FileHash -Algorithm SHA256 | Sort-Object Path | ForEach-Object {
     "$($_.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($_.Path))"
 } | Set-Content -LiteralPath (Join-Path $github 'SHA256SUMS.txt') -Encoding utf8
 
-Copy-Item -LiteralPath (Join-Path $github "YARUS-$version-Windows-x64.zip"),(Join-Path $github "YARUS-$version-Android.apk"),(Join-Path $github 'RELEASE-NOTES.txt'),(Join-Path $github 'НАЧАТЬ.txt'),(Join-Path $github 'SHA256SUMS.txt') -Destination $yandexStage
+Copy-Item -LiteralPath (Join-Path $github "YARUS-$version-Windows-x64.zip"),(Join-Path $github "YARUS-$version-Android.apk"),(Join-Path $github 'RELEASE-NOTES.txt'),(Join-Path $github 'START-HERE-RU.txt'),(Join-Path $github 'SHA256SUMS.txt') -Destination $yandexStage
 $yandexZip = Join-Path $publish "YARUS-$version-для-Яндекс-Диска.zip"
 Compress-Archive -LiteralPath $yandexStage -DestinationPath $yandexZip -CompressionLevel Optimal
 
