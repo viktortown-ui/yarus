@@ -3,6 +3,8 @@ Date: 2026-09-20
 Environment: Android 16 emulator, 1080x1920, density 420, package ru.viktortown.yarus.
 
 PASS: signed release APK installed and launched.
+PASS: APK pulled back from Android package storage is byte-identical to the release APK
+      (SHA-256 baf0e1b9a58aac722cf6a0ab00f46abccf8251497945d4735109e11c7842f2ad).
 PASS: update install over an earlier build retained the existing demo warehouse.
 PASS: force-stop and restart retained local data.
 PASS: portrait and landscape layouts rendered without horizontal overflow.

@@ -50,6 +50,7 @@ $output = Join-Path $root 'dist\android'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $apk = Join-Path $output 'YARUS-1.0.0-RuStore.apk'
 $aab = Join-Path $output 'YARUS-1.0.0-RuStore.aab'
+$certificate = Join-Path $output 'YARUS-upload-certificate.pem'
 Copy-Item -LiteralPath (Join-Path $android 'app\build\outputs\apk\release\app-release.apk') -Destination $apk -Force
 Copy-Item -LiteralPath (Join-Path $android 'app\build\outputs\bundle\release\app-release.aab') -Destination $aab -Force
 
@@ -58,6 +59,12 @@ $apksigner = Join-Path $sdk 'build-tools\36.1.0\apksigner.bat'
 if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed.' }
 & (Join-Path $jbr 'bin\jarsigner.exe') -verify $aab
 if ($LASTEXITCODE -ne 0) { throw 'AAB signature verification failed.' }
+& (Join-Path $jbr 'bin\keytool.exe') -exportcert -rfc -alias $secrets.keyAlias -keystore $keystorePath -storepass $secrets.storePassword -file $certificate
+if ($LASTEXITCODE -ne 0) { throw 'Public upload certificate export failed.' }
+$certificateText = Get-Content -LiteralPath $certificate -Raw -Encoding ascii
+if ($certificateText -notmatch 'BEGIN CERTIFICATE' -or $certificateText -match 'PRIVATE KEY') {
+    throw 'Exported certificate is not a safe public PEM certificate.'
+}
 
 Get-FileHash -Algorithm SHA256 $apk,$aab |
     ForEach-Object { "$($_.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($_.Path))" } |
@@ -65,3 +72,4 @@ Get-FileHash -Algorithm SHA256 $apk,$aab |
 
 Write-Host "Built and verified: $apk"
 Write-Host "Built and verified: $aab"
+Write-Host "Exported public certificate: $certificate"
