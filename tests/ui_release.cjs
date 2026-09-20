@@ -59,6 +59,15 @@ async function phoneShots(browser) {
   const { context, page, errors } = await mount(browser, { width: 360, height: 640 }, 3);
   await shot(page, folder, '01-overview-1080x1920.png');
   await page.locator('.mobile-nav [data-nav="stock"]').click();
+  await page.evaluate(() => {
+    URL.createObjectURL = () => { throw new Error('legacy object URL path must not be used'); };
+    HTMLImageElement.prototype.decode = () => Promise.reject(new Error('legacy image.decode path must not be used'));
+  });
+  await page.locator('[data-action="scan-code"]').first().click();
+  await page.locator('#scan-image').setInputFiles(path.join(ROOT, 'tests', 'fixtures', 'bar-EAN13-460123456789.png'));
+  await page.waitForFunction(() => document.querySelector('#scan-result')?.textContent.includes('4601234567893'));
+  assert.match(await page.locator('#scan-status').textContent(), /Код прочитан.*EAN-13/);
+  await page.locator('#scan-close').click();
   await shot(page, folder, '02-stock-1080x1920.png');
   await page.locator('.mobile-nav [data-nav="history"]').click();
   await shot(page, folder, '03-history-1080x1920.png');

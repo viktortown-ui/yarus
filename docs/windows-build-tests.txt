@@ -1,3 +1,6 @@
 PASS: Windows x64 cross-build; separate GUI and console subsystems; current shared UI embedded.
 PASS: YARUS.exe has 7 icon sizes and asInvoker manifest.
-NOT TESTED: execution on Windows, WebView2 loader/COM callbacks, camera, file dialogs, real profile storage.
+PASS: packaged YARUS-server.exe started on Windows from a clean extracted ZIP; /api/info returned 1.0.0.
+PASS: portable yarus.journal, OPEN-YARUS.url and directory lock were created inside the package data folder.
+PASS: YARUS.exe/WebView2 GUI was exercised in the release acceptance run and created its portable WebView profile.
+NOT TESTED: physical webcam, printer, Authenticode reputation or every Windows/WebView2 version.

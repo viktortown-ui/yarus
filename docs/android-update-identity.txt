@@ -1,4 +1,7 @@
-PASS: exact original 0.9.1 certificate, package, local WebView origin and IndexedDB name retained.
+PASS: release package is ru.viktortown.yarus; versionCode 2026092001; versionName 1.0.0.
 PASS: final APK HTML equals canonical packed HTML.
-Certificate SHA256: a29fc15f144a08624ea02aa4e06c878bebf12e1d0093b7dac63dfcecdf76fcd1
-NOT TESTED: physical Android update/data migration.
+PASS: APK and AAB use the permanent YARUS 1.0.0 release key.
+Certificate SHA256: 56fa7cf2f0dbfa1749100c9acbf24efa0896fa435a8433c46a73e5a9b4e12f8e
+PASS: emulator update from an earlier 1.0.0 build signed by this key retained app data.
+KNOWN LIMIT: the lost experimental beta key is different; export JSON before removing beta 0.10.0.
+NOT TESTED: update/data migration on a physical Android device or vendor-specific firmware.

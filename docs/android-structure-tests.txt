@@ -1,7 +1,9 @@
-PASS: APK ZIP integrity and all required local assets
-PASS: resources.arsc uncompressed and 4-byte aligned
-PASS: DEX checksums, sorted tables, 6 classes / 22 defined methods, instruction references, branch boundaries and ART outs_size/registers_size constraint
-PASS: compiled AndroidManifest XML hierarchy and resources table chunk boundaries
-PASS: seven self-contained offline scripts and every CSP hash matches; camera, QR decoder/encoder and labels bundled
-PASS: APK v2 RSA-SHA256 signature verified; independent full APK digest matches
-NOT TESTED: Android package installer, ART bytecode verifier, WebView persistence, native file chooser, device networking.
+PASS: standard Gradle release build completed with lintVital and resource processing.
+PASS: APK ZIP integrity and required local HTML/resources verified; no runtime CDN dependency.
+PASS: compiled manifest declares ru.viktortown.yarus, minSdk 24, targetSdk 36,
+      INTERNET and CAMERA only, plus the internal YarusWidgetProvider.
+PASS: APK Signature Scheme v2/v3 verified with the permanent RSA-4096 release key.
+PASS: AAB JAR signature verified with the same release certificate.
+PASS: canonical packed HTML equals the asset embedded in the final APK build.
+SCOPE: this file records static/build checks. Native Android runtime acceptance is
+       recorded separately in android-runtime-tests.txt.

@@ -1,0 +1,21 @@
+ANDROID RUNTIME ACCEPTANCE — YARUS 1.0.0
+Date: 2026-09-20
+Environment: Android 16 emulator, 1080x1920, density 420, package ru.viktortown.yarus.
+
+PASS: signed release APK installed and launched.
+PASS: update install over an earlier build retained the existing demo warehouse.
+PASS: force-stop and restart retained local data.
+PASS: portrait and landscape layouts rendered without horizontal overflow.
+PASS: Android app widget was bound, showed warehouse totals, and opened YARUS on tap.
+PASS: native DocumentsUI exported a full JSON backup; parsed format yarus-data/version 1,
+      12 items, 3 places, 14 events.
+PASS: native DocumentsUI exported an unencrypted one-page A4 stock PDF; pypdf and
+      Poppler rendering confirmed readable Cyrillic, table and footer without clipping.
+PASS: CAMERA runtime permission was requested and granted.
+PASS: Android Photo Picker supplied the PNG fixture; YARUS decoded EAN-13
+      4601234567893 locally after the WebView content-URI compatibility fix.
+PASS: no fatal Android/Chromium error was logged during the fixed image scan.
+
+LIMIT: the emulator virtual camera did not provide WebView with a stable video stream.
+      Live camera autofocus/exposure and printing remain physical-device acceptance items.
+LIMIT: no RuStore account submission or store moderation is claimed by this test.
