@@ -1,8 +1,8 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
-$folder = Join-Path $dist 'windows\YARUS-1.0.0-Windows-x64'
-$zip = Join-Path $dist 'windows\YARUS-1.0.0-Windows-x64.zip'
+$folder = Join-Path $dist 'windows\YARUS-1.1.2-Windows-x64'
+$zip = Join-Path $dist 'windows\YARUS-1.1.2-Windows-x64.zip'
 
 & (Join-Path $PSScriptRoot 'build_windows.ps1')
 if ($LASTEXITCODE -ne 0) { throw 'Windows build failed.' }
@@ -13,8 +13,8 @@ New-Item -ItemType Directory -Force -Path (Join-Path $folder 'data'),(Join-Path 
 Copy-Item -LiteralPath (Join-Path $dist 'YARUS.exe') -Destination $folder
 Copy-Item -LiteralPath (Join-Path $dist 'YARUS-server.exe') -Destination $folder
 Copy-Item -LiteralPath (Join-Path $dist 'WebView2Loader.dll') -Destination $folder
-Copy-Item -LiteralPath (Join-Path $root 'docs\ИНСТРУКЦИЯ-1.0.0.html') -Destination (Join-Path $folder 'ИНСТРУКЦИЯ.html')
-Copy-Item -LiteralPath (Join-Path $root 'docs\YARUS-1.0.0-stock-report-example.pdf') -Destination (Join-Path $folder 'ПРИМЕР-ОТЧЕТА-ОСТАТКОВ.pdf')
+Copy-Item -LiteralPath (Join-Path $root 'docs\ИНСТРУКЦИЯ-1.1.2.html') -Destination (Join-Path $folder 'ИНСТРУКЦИЯ.html')
+Copy-Item -LiteralPath (Join-Path $root 'docs\YARUS-1.1.2-stock-report-example.pdf') -Destination (Join-Path $folder 'ПРИМЕР-ОТЧЕТА-ОСТАТКОВ.pdf')
 Copy-Item -LiteralPath (Join-Path $root 'THIRD_PARTY_NOTICES.txt') -Destination $folder
 Copy-Item -LiteralPath (Join-Path $root 'docs\licenses\Microsoft.WebView2.LICENSE.txt') -Destination (Join-Path $folder 'licenses')
 Copy-Item -LiteralPath (Join-Path $root 'docs\licenses\Microsoft.WebView2.NOTICE.txt') -Destination (Join-Path $folder 'licenses')

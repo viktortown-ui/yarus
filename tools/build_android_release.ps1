@@ -48,8 +48,8 @@ try {
 
 $output = Join-Path $root 'dist\android'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-$apk = Join-Path $output 'YARUS-1.0.0-RuStore.apk'
-$aab = Join-Path $output 'YARUS-1.0.0-RuStore.aab'
+$apk = Join-Path $output 'YARUS-1.1.2-RuStore.apk'
+$aab = Join-Path $output 'YARUS-1.1.2-RuStore.aab'
 $certificate = Join-Path $output 'YARUS-upload-certificate.pem'
 Copy-Item -LiteralPath (Join-Path $android 'app\build\outputs\apk\release\app-release.apk') -Destination $apk -Force
 Copy-Item -LiteralPath (Join-Path $android 'app\build\outputs\bundle\release\app-release.aab') -Destination $aab -Force

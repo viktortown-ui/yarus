@@ -22,6 +22,7 @@ var winUser = syscall.NewLazyDLL("user32.dll")
 var winKernel = syscall.NewLazyDLL("kernel32.dll")
 var winOle = syscall.NewLazyDLL("ole32.dll")
 var winDialog = syscall.NewLazyDLL("comdlg32.dll")
+var winShell = syscall.NewLazyDLL("shell32.dll")
 
 func wp(d *syscall.LazyDLL, n string) *syscall.LazyProc { return d.NewProc(n) }
 func wstr(s string) *uint16                             { p, _ := syscall.UTF16PtrFromString(s); return p }
@@ -75,7 +76,7 @@ func comText(object uintptr, index int) string {
 	}
 	defer wp(winOle, "CoTaskMemFree").Call(uintptr(unsafe.Pointer(p)))
 	var chars []uint16
-	for i := uintptr(0); i < 24*1024*1024; i++ {
+	for i := uintptr(0); i < 64*1024*1024; i++ {
 		c := *(*uint16)(unsafe.Pointer(uintptr(unsafe.Pointer(p)) + i*2))
 		if c == 0 {
 			break
@@ -139,10 +140,11 @@ var pendingNativeMessages []nativeMessage
 var winEnvironmentDLL *syscall.DLL
 
 type nativeMessage struct {
-	Kind string `json:"kind"`
-	Name string `json:"name"`
-	Text string `json:"text"`
-	Mime string `json:"mime"`
+	Kind  string `json:"kind"`
+	Name  string `json:"name"`
+	Text  string `json:"text"`
+	Mime  string `json:"mime"`
+	Value string `json:"value"`
 }
 
 func nativeTrusted(raw string) bool {
@@ -329,11 +331,20 @@ func desktopUI(address string) error {
 					return 0
 				}
 				raw := comText(args, 4)
-				if len(raw) > 20<<20 {
+				if len(raw) > 64<<20 {
 					return 0
 				}
 				var m nativeMessage
-				if json.Unmarshal([]byte(raw), &m) != nil || m.Kind != "saveText" || len(pendingNativeMessages) > 0 {
+				if json.Unmarshal([]byte(raw), &m) != nil {
+					return 0
+				}
+				if m.Kind == "openExternal" {
+					if validExternal(m.Value) {
+						wp(winShell, "ShellExecuteW").Call(0, uintptr(unsafe.Pointer(wstr("open"))), uintptr(unsafe.Pointer(wstr(m.Value))), 0, 0, 1)
+					}
+					return 0
+				}
+				if m.Kind != "saveText" || len(pendingNativeMessages) > 0 {
 					return 0
 				}
 				if !validExport(m) {
@@ -356,7 +367,7 @@ func desktopUI(address string) error {
 	})
 	// Keep Runtime settings deterministic; do not accept executable/debugger overrides.
 	for _, key := range []string{"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER", "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "WEBVIEW2_USER_DATA_FOLDER"} {
-		os.Setenv(key, "")
+		_ = os.Unsetenv(key)
 	}
 	hr, _, _ = create.Call(0, uintptr(unsafe.Pointer(wstr(profile))), environmentOptions(), envCallback)
 	if int32(hr) < 0 {
@@ -385,9 +396,20 @@ func desktopUI(address string) error {
 }
 
 func validExport(m nativeMessage) bool {
-	allowed := map[string]string{"application/pdf": ".pdf", "application/json": ".json", "image/svg+xml": ".svg", "text/csv": ".csv"}
+	allowed := map[string]string{"application/pdf": ".pdf", "application/json": ".json", "application/vnd.yarus+json": ".yarus", "image/svg+xml": ".svg", "text/csv": ".csv"}
 	ext, ok := allowed[m.Mime]
-	return ok && strings.HasSuffix(strings.ToLower(m.Name), ext) && len(m.Name) < 160 && len(m.Text) <= 20<<20 && !strings.ContainsAny(m.Name, "\\/:*?\"<>|\x00")
+	return ok && strings.HasSuffix(strings.ToLower(m.Name), ext) && len(m.Name) < 160 && len(m.Text) <= 48<<20 && !strings.ContainsAny(m.Name, "\\/:*?\"<>|\x00")
+}
+
+func validExternal(value string) bool {
+	u, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	if u.Scheme == "mailto" {
+		return strings.EqualFold(u.Opaque, "fixerkrk@yandex.ru")
+	}
+	return u.Scheme == "https" && strings.EqualFold(u.Host, "t.me") && u.Path == "/bertosh1"
 }
 
 type saveDialog struct {

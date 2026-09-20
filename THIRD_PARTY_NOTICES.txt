@@ -1,4 +1,4 @@
-ЯРУС 1.0.0 — сторонние компоненты / Third-party notices
+ЯРУС 1.1.2 — сторонние компоненты / Third-party notices
 
 QR encoder: QRCode, Copyright (c) 2009 Kazuhiko Arase, MIT.
 Locally bundled from qrcode-terminal/vendor/QRCode. Wrapper changed for YARUS.
@@ -277,6 +277,16 @@ Microsoft Edge WebView2 SDK / WebView2Loader.dll 1.0.4191.47.
 Copyright (c) Microsoft Corporation. All rights reserved.
 The original Microsoft license and notice are shipped in the licenses folder:
 Microsoft.WebView2.LICENSE.txt and Microsoft.WebView2.NOTICE.txt.
+
+Android only: RuStore In-app Review SDK 10.5.1 and its RuStore runtime modules.
+Copyright belongs to the RuStore SDK rightsholder. Used under the applicable
+RuStore developer terms. Documentation:
+https://www.rustore.ru/help/sdk/reviews-ratings/kotlin-java/10-5-1
+
+Android only: Kotlin standard library 1.8.22, Apache License 2.0.
+Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+The Apache License 2.0 text already included above applies to this component.
+https://github.com/JetBrains/kotlin
 
 Code128 standard patterns: generated from ReportLab data table.
 ReportLab is used for test fixture generation, not shipped as a runtime.

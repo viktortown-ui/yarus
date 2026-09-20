@@ -1,13 +1,17 @@
-ANDROID RUNTIME ACCEPTANCE — YARUS 1.0.0
-Date: 2026-09-20
-Environment: Android 16 emulator, 1080x1920, density 420, package ru.viktortown.yarus.
+ANDROID RUNTIME ACCEPTANCE — YARUS 1.1.2
+Date: 2026-09-21
+Environment: Android 16 emulator, package ru.viktortown.yarus.
 
-PASS: signed release APK installed and launched.
-PASS: APK pulled back from Android package storage is byte-identical to the release APK
-      (SHA-256 baf0e1b9a58aac722cf6a0ab00f46abccf8251497945d4735109e11c7842f2ad).
-PASS: update install over an earlier build retained the existing demo warehouse.
-PASS: force-stop and restart retained local data.
-PASS: portrait and landscape layouts rendered without horizontal overflow.
+PASS: exact final signed release APK installed with adb install -r and launched.
+PASS: package reports versionCode 2026092101 and versionName 1.1.2.
+PASS: firstInstallTime remained 2026-09-19 22:29:35 after the upgrade.
+PASS: existing demo warehouse retained 12 products and its movement history.
+PASS: Settings UI reports "Версия 1.1.2"; obsolete beta version text is absent.
+PASS: camera invitation control and responsive phone/tablet layouts were exercised.
+PASS: a real SAF .yarus.json survived uninstall/reinstall and restored its product.
+APK SHA-256: 8960028d777fe5cca53a415bd9e7ba469feceba513b3ec5d3abb68487acd0eef
+
+NOT TESTED: every vendor firmware, physical camera/printer or RuStore production review flow.
 PASS: Android app widget was bound, showed warehouse totals, and opened YARUS on tap.
 PASS: native DocumentsUI exported a full JSON backup; parsed format yarus-data/version 1,
       12 items, 3 places, 14 events.

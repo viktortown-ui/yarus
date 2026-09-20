@@ -1,7 +1,0 @@
-PASS: original APK reproduces 10 ART outs_size/registers_size constraint violations
-PASS: repaired APK: all 15 methods satisfy the constraint; outgoing sizes match decoded invokes
-PASS: DEX changes limited to outgoing-size headers and required checksums; method instructions unchanged
-PASS: bundled interface, IndexedDB keys, storage schema, server protocol byte-for-byte unchanged
-PASS: manifest unchanged except versionName 0.9.1 beta and versionCode 901; package and permissions unchanged
-PASS: exact original signing certificate retained: a29fc15f144a08624ea02aa4e06c878bebf12e1d0093b7dac63dfcecdf76fcd1
-NOT TESTED: installation, Android runtime, real device startup, WebView or network behavior

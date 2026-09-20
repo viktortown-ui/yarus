@@ -36,9 +36,27 @@ import (
 //go:embed web/*
 var assets embed.FS
 
-const appVersion = "1.0.0"
+const appVersion = "1.1.2"
 const maxQty int64 = 1_000_000_000_000
 const backupRetention = 30
+
+const (
+	permCatalog      = "catalog"
+	permPlaces       = "places"
+	permStock        = "stock"
+	permReverse      = "reverse"
+	permSettings     = "settings"
+	permTeam         = "team"
+	permFullExport   = "full_export"
+	permBackup       = "backup"
+	permViewPrices   = "view_prices"
+	permHostTransfer = "host_transfer"
+)
+
+var allPermissions = []string{
+	permCatalog, permPlaces, permStock, permReverse, permSettings,
+	permTeam, permFullExport, permBackup, permViewPrices, permHostTransfer,
+}
 
 type Workspace struct {
 	ID       string `json:"id"`
@@ -92,13 +110,14 @@ type Event struct {
 	Changes   []Delta `json:"changes"`
 }
 type User struct {
-	ID       string `json:"id"`
-	Login    string `json:"login"`
-	Name     string `json:"name"`
-	Role     string `json:"role"`
-	Salt     string `json:"salt"`
-	Hash     string `json:"hash"`
-	Disabled bool   `json:"disabled"`
+	ID          string          `json:"id"`
+	Login       string          `json:"login"`
+	Name        string          `json:"name"`
+	Role        string          `json:"role"`
+	Permissions map[string]bool `json:"permissions,omitempty"`
+	Salt        string          `json:"salt"`
+	Hash        string          `json:"hash"`
+	Disabled    bool            `json:"disabled"`
 }
 type Invite struct {
 	Hash    string `json:"hash"`
@@ -114,9 +133,17 @@ type Session struct {
 type Seen struct {
 	Intent string `json:"intent"`
 }
+type HostInfo struct {
+	Epoch      int64  `json:"epoch"`
+	Status     string `json:"status"`
+	Device     string `json:"device"`
+	TransferID string `json:"transferId,omitempty"`
+	UpdatedAt  string `json:"updatedAt"`
+}
 type State struct {
 	Seq      int64              `json:"seq"`
 	Space    Workspace          `json:"space"`
+	Host     HostInfo           `json:"host"`
 	Items    map[string]Item    `json:"items"`
 	Places   map[string]Place   `json:"places"`
 	Stocks   map[string]Stock   `json:"stocks"`
@@ -141,16 +168,22 @@ type Patch struct {
 	Invite        *Invite    `json:"invite,omitempty"`
 	Session       *Session   `json:"session,omitempty"`
 	DeleteSession string     `json:"deleteSession,omitempty"`
+	Host          *HostInfo  `json:"host,omitempty"`
+	Full          *State     `json:"full,omitempty"`
 }
 type Record struct {
-	Data json.RawMessage `json:"data"`
-	Hash string          `json:"hash"`
+	Version    int             `json:"v,omitempty"`
+	Data       json.RawMessage `json:"data,omitempty"`
+	Nonce      string          `json:"nonce,omitempty"`
+	Ciphertext string          `json:"ciphertext,omitempty"`
+	Hash       string          `json:"hash"`
 }
 type Store struct {
 	mu       sync.RWMutex
 	S        State
 	file     *os.File
 	Path     string
+	key      []byte
 	previous string
 	failed   bool
 }
@@ -174,7 +207,18 @@ func random(n int) string {
 }
 func identifier() string            { return random(12) }
 func key(item, place string) string { return item + "@" + place }
+func activeHost(device string, epoch int64) HostInfo {
+	if epoch < 1 {
+		epoch = 1
+	}
+	return HostInfo{Epoch: epoch, Status: "active", Device: device, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+}
 func apply(s *State, p Patch) {
+	if p.Full != nil {
+		*s = *p.Full
+		s.Seq = p.Seq
+		return
+	}
 	s.Seq = p.Seq
 	if p.Space != nil {
 		s.Space = *p.Space
@@ -203,6 +247,9 @@ func apply(s *State, p Patch) {
 	if p.DeleteSession != "" {
 		delete(s.Sessions, p.DeleteSession)
 	}
+	if p.Host != nil {
+		s.Host = *p.Host
+	}
 	if p.Key != "" {
 		s.Seen[p.Key] = Seen{p.Intent}
 	}
@@ -211,13 +258,18 @@ func openStore(path string) (*Store, error) {
 	if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
 		return nil, e
 	}
+	journalKey, e := loadOrCreateJournalKey(path)
+	if e != nil {
+		return nil, e
+	}
 	f, e := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if e != nil {
 		return nil, e
 	}
-	st := &Store{S: blankState(), file: f, Path: path}
+	st := &Store{S: blankState(), file: f, Path: path, key: journalKey}
 	r := bufio.NewReader(f)
 	var offset int64
+	legacy := false
 	for {
 		line, err := r.ReadBytes('\n')
 		if err == io.EOF {
@@ -240,7 +292,26 @@ func openStore(path string) (*Store, error) {
 		}
 		var rec Record
 		var p Patch
-		if len(line) > 16<<20 || json.Unmarshal(line, &rec) != nil || rec.Hash != hash(st.previous+string(rec.Data)) || json.Unmarshal(rec.Data, &p) != nil || p.Seq != st.S.Seq+1 {
+		if len(line) > 64<<20 || json.Unmarshal(line, &rec) != nil {
+			f.Close()
+			return nil, fmt.Errorf("journal integrity error at byte %d; preserve file and restore verified backup", offset)
+		}
+		var plain []byte
+		if rec.Version == 1 {
+			if len(rec.Data) != 0 || rec.Hash != encryptedRecordHash(st.previous, rec.Nonce, rec.Ciphertext) {
+				f.Close()
+				return nil, fmt.Errorf("journal integrity error at byte %d; preserve file and restore verified backup", offset)
+			}
+			plain, e = openJournalRecord(st.key, rec.Nonce, rec.Ciphertext, st.previous)
+		} else {
+			legacy = true
+			if rec.Hash != hash(st.previous+string(rec.Data)) {
+				e = errors.New("legacy journal hash mismatch")
+			} else {
+				plain = rec.Data
+			}
+		}
+		if e != nil || json.Unmarshal(plain, &p) != nil || p.Seq != st.S.Seq+1 {
 			f.Close()
 			return nil, fmt.Errorf("journal integrity error at byte %d; preserve file and restore verified backup", offset)
 		}
@@ -253,16 +324,33 @@ func openStore(path string) (*Store, error) {
 		f.Close()
 		return nil, e
 	}
-	// Add a stable QR namespace to legacy journals without rewriting stock or events.
-	if len(st.S.Users) > 0 && st.S.Space.ID == "" {
+	if legacy {
 		if _, err := st.backup(); err != nil {
 			f.Close()
-			return nil, fmt.Errorf("backup before namespace migration: %w", err)
+			return nil, fmt.Errorf("backup before encrypted journal migration: %w", err)
 		}
-		space := st.S.Space
-		space.ID = identifier()
-		if err := st.commit(Patch{Space: &space}); err != nil {
-			f.Close()
+		if err := st.rewriteEncrypted(); err != nil {
+			return nil, fmt.Errorf("encrypted journal migration: %w", err)
+		}
+	}
+	// Add stable QR and host metadata to legacy journals in one backed-up record.
+	if len(st.S.Users) > 0 && (st.S.Space.ID == "" || st.S.Host.Epoch == 0) {
+		if _, err := st.backup(); err != nil {
+			st.file.Close()
+			return nil, fmt.Errorf("backup before metadata migration: %w", err)
+		}
+		patch := Patch{}
+		if st.S.Space.ID == "" {
+			space := st.S.Space
+			space.ID = identifier()
+			patch.Space = &space
+		}
+		if st.S.Host.Epoch == 0 {
+			host := activeHost("Windows-компьютер", 1)
+			patch.Host = &host
+		}
+		if err := st.commit(patch); err != nil {
+			st.file.Close()
 			return nil, err
 		}
 	}
@@ -282,7 +370,12 @@ func (st *Store) commit(p Patch) error {
 	if e != nil {
 		return e
 	}
-	rec := Record{data, hash(st.previous + string(data))}
+	nonce, ciphertext, e := sealJournalRecord(st.key, data, st.previous)
+	if e != nil {
+		return e
+	}
+	rec := Record{Version: 1, Nonce: nonce, Ciphertext: ciphertext}
+	rec.Hash = encryptedRecordHash(st.previous, rec.Nonce, rec.Ciphertext)
 	line, _ := json.Marshal(rec)
 	line = append(line, '\n')
 	n, e := st.file.Write(line)
@@ -308,7 +401,10 @@ func (st *Store) backup() (string, error) {
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return "", e
 	}
-	dest := filepath.Join(dir, "yarus-"+time.Now().Format("20060102-150405.000000000")+".journal")
+	if e := copyJournalKey(st.Path, dir); e != nil {
+		return "", fmt.Errorf("backup encryption key: %w", e)
+	}
+	dest := filepath.Join(dir, "yarus-"+time.Now().Format("20060102-150405.000000000")+"-"+random(4)+".journal")
 	in, e := os.Open(st.Path)
 	if e != nil {
 		return "", e
@@ -449,13 +545,68 @@ type Command struct {
 	Note     string     `json:"note,omitempty"`
 	Ref      string     `json:"ref,omitempty"`
 	UserID   string     `json:"userId,omitempty"`
+	Role     string     `json:"role,omitempty"`
 	Space    *Workspace `json:"space,omitempty"`
+}
+
+func roleDefaults(role string) map[string]bool {
+	permissions := map[string]bool{}
+	add := func(values ...string) {
+		for _, value := range values {
+			permissions[value] = true
+		}
+	}
+	switch role {
+	case "owner":
+		add(allPermissions...)
+	case "admin":
+		add(permCatalog, permPlaces, permStock, permReverse, permSettings, permTeam, permFullExport, permBackup, permViewPrices)
+	case "manager", "editor": // editor is kept for compatibility with 1.0.0 journals.
+		add(permCatalog, permPlaces, permStock, permViewPrices)
+	case "operator":
+		add(permStock)
+	case "viewer":
+	}
+	return permissions
+}
+
+func effectivePermissions(u User) map[string]bool {
+	permissions := roleDefaults(u.Role)
+	if u.Role == "owner" {
+		return permissions
+	}
+	for key, value := range u.Permissions {
+		known := false
+		for _, permission := range allPermissions {
+			if key == permission && key != permHostTransfer {
+				known = true
+				break
+			}
+		}
+		if known {
+			permissions[key] = value
+		}
+	}
+	return permissions
+}
+
+func allowed(u User, permission string) bool { return effectivePermissions(u)[permission] }
+
+func allowedRole(role string) bool {
+	return role == "admin" || role == "manager" || role == "operator" || role == "viewer" || role == "editor"
+}
+
+func requirePermission(u User, permission, message string) error {
+	if !allowed(u, permission) {
+		return bad(403, message)
+	}
+	return nil
 }
 
 func prepare(s *State, u User, c Command) (Patch, error) {
 	p := Patch{}
-	if u.Role == "viewer" {
-		return p, bad(403, "У вас доступ только для просмотра.")
+	if s.Host.Status == "retired" {
+		return p, bad(423, "Это устройство больше не является главным. Подключитесь к новому главному устройству.")
 	}
 	if !validID(c.ID) {
 		return p, bad(400, "Некорректный идентификатор операции.")
@@ -465,6 +616,9 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 	}
 	switch c.Type {
 	case "item":
+		if e := requirePermission(u, permCatalog, "У вас нет права изменять каталог."); e != nil {
+			return p, e
+		}
 		if c.Item == nil {
 			return p, bad(400, "Нет карточки товара.")
 		}
@@ -510,6 +664,9 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 		x.Version = old.Version + 1
 		p.Item = &x
 	case "place":
+		if e := requirePermission(u, permPlaces, "У вас нет права изменять места хранения."); e != nil {
+			return p, e
+		}
 		if c.Place == nil {
 			return p, bad(400, "Нет места хранения.")
 		}
@@ -533,8 +690,8 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 		x.Version++
 		p.Place = &x
 	case "space":
-		if u.Role != "owner" {
-			return p, bad(403, "Настройки склада меняет владелец.")
+		if e := requirePermission(u, permSettings, "У вас нет права менять настройки склада."); e != nil {
+			return p, e
 		}
 		if c.Space == nil || strings.TrimSpace(c.Space.Name) == "" || !text(c.Space.Name, 80) {
 			return p, bad(400, "Укажите название склада.")
@@ -546,8 +703,11 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 		}
 		p.Space = &x
 	case "disable":
-		if u.Role != "owner" || u.ID == c.UserID {
-			return p, bad(403, "Нельзя отключить владельца или самого себя.")
+		if e := requirePermission(u, permTeam, "У вас нет права управлять участниками."); e != nil {
+			return p, e
+		}
+		if u.ID == c.UserID {
+			return p, bad(403, "Нельзя отключить самого себя.")
 		}
 		x, ok := s.Users[c.UserID]
 		if !ok || x.Role == "owner" {
@@ -555,9 +715,29 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 		}
 		x.Disabled = true
 		p.User = &x
+	case "user-role":
+		if e := requirePermission(u, permTeam, "У вас нет права управлять участниками."); e != nil {
+			return p, e
+		}
+		if !allowedRole(c.Role) {
+			return p, bad(400, "Недопустимый уровень доступа.")
+		}
+		x, ok := s.Users[c.UserID]
+		if !ok || x.Role == "owner" {
+			return p, bad(404, "Владельца нельзя заменить или понизить.")
+		}
+		x.Role = c.Role
+		x.Permissions = nil
+		p.User = &x
 	case "in", "out", "transfer", "count", "reverse":
-		if c.Type == "reverse" && u.Role != "owner" {
-			return p, bad(403, "Отмену проводит владелец.")
+		permission := permStock
+		message := "У вас нет права проводить складские движения."
+		if c.Type == "reverse" {
+			permission = permReverse
+			message = "У вас нет права отменять движения."
+		}
+		if e := requirePermission(u, permission, message); e != nil {
+			return p, e
 		}
 		e := Event{ID: c.ID, Kind: c.Type, Item: c.ItemID, From: c.From, To: c.To, Qty: c.Qty, Note: c.Note, Ref: c.Ref, Actor: u.ID, ActorName: u.Name, At: time.Now().UTC().Format(time.RFC3339Nano)}
 		if c.Type == "reverse" {
@@ -643,7 +823,150 @@ func snapshot(s *State, u User, all bool) map[string]any {
 	if !all && len(events) > 1000 {
 		events = events[len(events)-1000:]
 	}
-	return map[string]any{"format": "yarus-data", "version": 1, "seq": s.Seq, "space": s.Space, "items": s.Items, "places": s.Places, "stocks": s.Stocks, "events": events, "eventCount": len(s.Events), "me": map[string]any{"id": u.ID, "name": u.Name, "login": u.Login, "role": u.Role}, "serverTime": time.Now().UTC().Format(time.RFC3339), "limits": map[string]int{"items": 5000, "places": 200}}
+	items := s.Items
+	if !allowed(u, permViewPrices) {
+		items = make(map[string]Item, len(s.Items))
+		for id, item := range s.Items {
+			item.Price = 0
+			items[id] = item
+		}
+	}
+	return map[string]any{
+		"format": "yarus-data", "version": 1, "seq": s.Seq, "space": s.Space,
+		"host": s.Host, "items": items, "places": s.Places, "stocks": s.Stocks,
+		"events": events, "eventCount": len(s.Events),
+		"me":         map[string]any{"id": u.ID, "name": u.Name, "login": u.Login, "role": u.Role, "permissions": effectivePermissions(u)},
+		"serverTime": time.Now().UTC().Format(time.RFC3339),
+		"limits":     map[string]int{"items": 5000, "places": 200},
+	}
+}
+
+type HostTransfer struct {
+	Format     string `json:"format"`
+	Version    int    `json:"version"`
+	AppVersion string `json:"appVersion"`
+	CreatedAt  string `json:"createdAt"`
+	State      State  `json:"state"`
+}
+
+func copyState(source State) (State, error) {
+	data, err := json.Marshal(source)
+	if err != nil {
+		return State{}, err
+	}
+	var result State
+	if err = json.Unmarshal(data, &result); err != nil {
+		return State{}, err
+	}
+	return result, nil
+}
+
+func knownPermission(permission string) bool {
+	for _, value := range allPermissions {
+		if permission == value {
+			return true
+		}
+	}
+	return false
+}
+
+func validateImportedState(s State) error {
+	if !validID(s.Space.ID) || strings.TrimSpace(s.Space.Name) == "" || !text(s.Space.Name, 80) || (s.Space.Currency != "RUB" && s.Space.Currency != "EUR" && s.Space.Currency != "USD") {
+		return bad(400, "В пакете повреждены настройки склада.")
+	}
+	if s.Host.Epoch < 1 || s.Host.Status != "active" || !text(s.Host.Device, 80) || strings.TrimSpace(s.Host.Device) == "" {
+		return bad(400, "В пакете повреждены сведения о главном устройстве.")
+	}
+	if s.Items == nil || s.Places == nil || s.Stocks == nil || s.Users == nil || s.Seen == nil || len(s.Items) > 5000 || len(s.Places) < 1 || len(s.Places) > 200 || len(s.Events) > 200000 || len(s.Users) < 1 || len(s.Users) > 500 || len(s.Seen) > 250000 {
+		return bad(400, "Пакет превышает ограничения этой версии или содержит неполные данные.")
+	}
+	for id, place := range s.Places {
+		if id != place.ID || !validID(id) || strings.TrimSpace(place.Name) == "" || !text(place.Name, 100) || !text(place.Note, 200) || place.Version < 1 {
+			return bad(400, "В пакете повреждено место хранения.")
+		}
+	}
+	for id, item := range s.Items {
+		if id != item.ID || !validID(id) || strings.TrimSpace(item.Name) == "" || !text(item.Name, 150) || !text(item.SKU, 80) || !text(item.Barcode, 80) || !text(item.Category, 80) || !text(item.Note, 2000) || !allowedUnit(item.Unit) || item.Min < 0 || item.Min > maxQty || item.Price < 0 || item.Price > 100_000_000 || item.Version < 1 || len(item.Fields) > 12 {
+			return bad(400, "В пакете повреждена карточка товара.")
+		}
+		for key, value := range item.Fields {
+			if strings.TrimSpace(key) == "" || !text(key, 40) || !text(value, 160) {
+				return bad(400, "В пакете повреждено дополнительное поле товара.")
+			}
+		}
+	}
+	ownerCount := 0
+	logins := map[string]bool{}
+	for id, user := range s.Users {
+		if id != user.ID || !validID(id) || !loginRE.MatchString(user.Login) || strings.TrimSpace(user.Name) == "" || !text(user.Name, 80) || logins[strings.ToLower(user.Login)] {
+			return bad(400, "В пакете повреждён участник или повторяется логин.")
+		}
+		logins[strings.ToLower(user.Login)] = true
+		if user.Role == "owner" {
+			ownerCount++
+		} else if !allowedRole(user.Role) {
+			return bad(400, "В пакете указана неизвестная роль участника.")
+		}
+		if len(user.Salt) < 16 || len(user.Salt) > 80 || len(user.Hash) != 64 {
+			return bad(400, "В пакете повреждены данные входа участника.")
+		}
+		for permission := range user.Permissions {
+			if !knownPermission(permission) || permission == permHostTransfer {
+				return bad(400, "В пакете указано неизвестное право участника.")
+			}
+		}
+	}
+	if ownerCount != 1 {
+		return bad(400, "В пакете должен быть ровно один владелец.")
+	}
+	computed := map[string]int64{}
+	eventIDs := map[string]bool{}
+	for _, event := range s.Events {
+		if !validID(event.ID) || eventIDs[event.ID] || !validID(event.Item) || s.Items[event.Item].ID == "" || len(event.Changes) < 1 || len(event.Changes) > 2 || !text(event.Note, 1000) || !text(event.ActorName, 80) {
+			return bad(400, "В пакете повреждена история движений.")
+		}
+		eventIDs[event.ID] = true
+		for _, delta := range event.Changes {
+			if delta.Item != event.Item || !validID(delta.Place) || s.Places[delta.Place].ID == "" || delta.Qty < -maxQty || delta.Qty > maxQty {
+				return bad(400, "В пакете повреждено изменение остатка.")
+			}
+			stockKey := key(delta.Item, delta.Place)
+			computed[stockKey] += delta.Qty
+			if computed[stockKey] < 0 || computed[stockKey] > maxQty {
+				return bad(400, "История пакета приводит к недопустимому остатку.")
+			}
+		}
+	}
+	for stockKey, stock := range s.Stocks {
+		if stockKey != key(stock.Item, stock.Place) || !validID(stock.Item) || !validID(stock.Place) || s.Items[stock.Item].ID == "" || s.Places[stock.Place].ID == "" || stock.Qty != computed[stockKey] || stock.Version < 1 {
+			return bad(400, "Остатки пакета не сходятся с историей.")
+		}
+		delete(computed, stockKey)
+	}
+	for _, qty := range computed {
+		if qty != 0 {
+			return bad(400, "Пакет содержит неполные остатки.")
+		}
+	}
+	return nil
+}
+
+func requestIsLoopback(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func ownerOf(s State) (User, bool) {
+	for _, user := range s.Users {
+		if user.Role == "owner" && !user.Disabled {
+			return user, true
+		}
+	}
+	return User{}, false
 }
 
 type Server struct {
@@ -677,14 +1000,17 @@ func fail(w http.ResponseWriter, e error) {
 	writeJSON(w, code, map[string]string{"error": msg})
 }
 func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	return readJSONLimit(w, r, v, 2<<20)
+}
+func readJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		return bad(415, "Нужен JSON.")
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if e := d.Decode(v); e != nil {
-		return bad(400, "Некорректный запрос или превышен размер 2 МБ.")
+		return bad(400, "Некорректный запрос или превышен допустимый размер файла.")
 	}
 	if d.Decode(&struct{}{}) != io.EOF {
 		return bad(400, "Лишние данные после JSON.")
@@ -731,8 +1057,61 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/info" && r.Method == "GET" {
 		a.st.mu.RLock()
 		ready := len(a.st.S.Users) > 0
+		host := a.st.S.Host
 		a.st.mu.RUnlock()
-		writeJSON(w, 200, map[string]any{"version": appVersion, "ready": ready, "name": "ЯРУС"})
+		writeJSON(w, 200, map[string]any{"version": appVersion, "ready": ready, "name": "ЯРУС", "host": host})
+		return
+	}
+	if r.URL.Path == "/api/transfer/import" && r.Method == "POST" {
+		if !requestIsLoopback(r) {
+			fail(w, bad(403, "Перенос на новый компьютер запускается только на самом новом компьютере."))
+			return
+		}
+		var input struct {
+			Setup    string       `json:"setup"`
+			Transfer HostTransfer `json:"transfer"`
+		}
+		if e := readJSONLimit(w, r, &input, 32<<20); e != nil {
+			fail(w, e)
+			return
+		}
+		a.st.mu.Lock()
+		defer a.st.mu.Unlock()
+		if len(a.st.S.Users) > 0 || a.st.S.Seq > 0 {
+			fail(w, bad(409, "Этот компьютер уже содержит склад. Для безопасного переноса используйте новую пустую папку ЯРУС."))
+			return
+		}
+		if a.setup == "" || subtle.ConstantTimeCompare([]byte(input.Setup), []byte(a.setup)) != 1 {
+			fail(w, bad(403, "Откройте перенос из окна ЯРУС на новом компьютере."))
+			return
+		}
+		if input.Transfer.Format != "yarus-host-state" || input.Transfer.Version != 1 {
+			fail(w, bad(400, "Это не пакет главного устройства ЯРУС."))
+			return
+		}
+		imported := input.Transfer.State
+		imported.Invites = map[string]Invite{}
+		imported.Sessions = map[string]Session{}
+		if imported.Seen == nil {
+			imported.Seen = map[string]Seen{}
+		}
+		if e := validateImportedState(imported); e != nil {
+			fail(w, e)
+			return
+		}
+		owner, ok := ownerOf(imported)
+		if !ok {
+			fail(w, bad(400, "В пакете не найден владелец."))
+			return
+		}
+		token, session := sessionFor(owner)
+		imported.Sessions[session.Hash] = session
+		imported.Seq = 0
+		if e := a.st.commit(Patch{Full: &imported}); e != nil {
+			fail(w, e)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"token": token, "state": snapshot(&a.st.S, owner, false)})
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, "/api/") {
@@ -747,6 +1126,60 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == "POST" && (r.URL.Path == "/api/setup" || r.URL.Path == "/api/login" || r.URL.Path == "/api/join") {
 		a.account(w, r)
+		return
+	}
+	if r.URL.Path == "/api/transfer/prepare" && r.Method == "POST" {
+		if !requestIsLoopback(r) {
+			fail(w, bad(403, "Пакет главного устройства создаётся только на самом главном компьютере."))
+			return
+		}
+		var input struct {
+			Device string `json:"device"`
+		}
+		if e := readJSON(w, r, &input); e != nil {
+			fail(w, e)
+			return
+		}
+		input.Device = strings.TrimSpace(input.Device)
+		if input.Device == "" || !text(input.Device, 80) {
+			fail(w, bad(400, "Укажите понятное название нового главного устройства."))
+			return
+		}
+		a.st.mu.Lock()
+		defer a.st.mu.Unlock()
+		u, e := a.auth(r)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		if !allowed(u, permHostTransfer) {
+			fail(w, bad(403, "Только владелец передаёт роль главного устройства."))
+			return
+		}
+		if a.st.S.Host.Status != "retired" {
+			host := a.st.S.Host
+			if host.Epoch < 1 {
+				host = activeHost("Windows-компьютер", 1)
+			}
+			host.Status = "retired"
+			host.TransferID = identifier()
+			host.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			if e = a.st.commit(Patch{Host: &host}); e != nil {
+				fail(w, e)
+				return
+			}
+		}
+		moved, e := copyState(a.st.S)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		moved.Host = activeHost(input.Device, a.st.S.Host.Epoch+1)
+		moved.Host.TransferID = a.st.S.Host.TransferID
+		moved.Invites = map[string]Invite{}
+		moved.Sessions = map[string]Session{}
+		transfer := HostTransfer{Format: "yarus-host-state", Version: 1, AppVersion: appVersion, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), State: moved}
+		writeJSON(w, 200, map[string]any{"transfer": transfer})
 		return
 	}
 	if r.URL.Path == "/api/command" && r.Method == "POST" {
@@ -802,11 +1235,11 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fail(w, e)
 			return
 		}
-		if u.Role != "owner" {
-			fail(w, bad(403, "Приглашает владелец."))
+		if !allowed(u, permTeam) {
+			fail(w, bad(403, "У вас нет права приглашать участников."))
 			return
 		}
-		if input.Role != "editor" && input.Role != "viewer" {
+		if !allowedRole(input.Role) {
 			fail(w, bad(400, "Недопустимая роль."))
 			return
 		}
@@ -843,8 +1276,8 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fail(w, e)
 			return
 		}
-		if u.Role != "owner" {
-			fail(w, bad(403, "Резервную копию создаёт владелец."))
+		if !allowed(u, permBackup) {
+			fail(w, bad(403, "У вас нет права создавать серверную копию."))
 			return
 		}
 		path, e := a.st.backup()
@@ -868,23 +1301,35 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, snapshot(&a.st.S, u, false))
 			return
 		case "/api/export":
-			if u.Role != "owner" {
-				fail(w, bad(403, "Полную копию экспортирует владелец."))
+			if !allowed(u, permFullExport) {
+				fail(w, bad(403, "У вас нет права экспортировать полную копию."))
 				return
 			}
 			writeJSON(w, 200, snapshot(&a.st.S, u, true))
 			return
 		case "/api/team":
-			if u.Role != "owner" {
-				fail(w, bad(403, "Управление участниками доступно владельцу."))
+			if !allowed(u, permTeam) {
+				fail(w, bad(403, "У вас нет права управлять участниками."))
 				return
 			}
 			list := []map[string]any{}
 			for _, x := range a.st.S.Users {
-				list = append(list, map[string]any{"id": x.ID, "name": x.Name, "login": x.Login, "role": x.Role, "disabled": x.Disabled})
+				list = append(list, map[string]any{"id": x.ID, "name": x.Name, "login": x.Login, "role": x.Role, "permissions": effectivePermissions(x), "disabled": x.Disabled})
 			}
 			sort.Slice(list, func(i, j int) bool { return list[i]["name"].(string) < list[j]["name"].(string) })
-			writeJSON(w, 200, map[string]any{"users": list, "addresses": addresses(a.listen)})
+			writeJSON(w, 200, map[string]any{"users": list, "addresses": addresses(a.listen), "host": a.st.S.Host})
+			return
+		case "/api/storage":
+			journalBytes := int64(0)
+			if info, statErr := os.Stat(a.st.Path); statErr == nil {
+				journalBytes = info.Size()
+			}
+			serialized, _ := json.Marshal(a.st.S)
+			writeJSON(w, 200, map[string]any{
+				"journalBytes": journalBytes, "packageBytes": len(serialized),
+				"items": len(a.st.S.Items), "places": len(a.st.S.Places), "events": len(a.st.S.Events),
+				"host": a.st.S.Host,
+			})
 			return
 		}
 	}
@@ -940,7 +1385,7 @@ func (a *Server) account(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		role := "editor"
+		role := "manager"
 		if r.URL.Path == "/api/setup" {
 			if len(a.st.S.Users) > 0 {
 				fail(w, bad(409, "Склад уже создан. Войдите или используйте приглашение."))
@@ -957,6 +1402,8 @@ func (a *Server) account(w http.ResponseWriter, r *http.Request) {
 			role = "owner"
 			p.Space = &Workspace{Name: strings.TrimSpace(input.Space), Currency: "RUB", ID: identifier()}
 			p.Place = &Place{ID: "main-place", Name: "Основной склад", Version: 1}
+			host := activeHost("Windows-компьютер", 1)
+			p.Host = &host
 		} else {
 			inv, ok := a.st.S.Invites[hash(strings.TrimSpace(input.Code))]
 			if !ok || inv.Used || inv.Expires < time.Now().Unix() {
@@ -983,21 +1430,69 @@ func addresses(listen string) []string {
 	if e != nil {
 		port = "8787"
 	}
+	type candidate struct {
+		url   string
+		score int
+	}
 	seen := map[string]bool{}
-	out := []string{}
-	as, _ := net.InterfaceAddrs()
-	for _, a := range as {
-		ip, _, _ := net.ParseCIDR(a.String())
-		if ip != nil && !ip.IsLoopback() && ip.To4() != nil && !ip.IsLinkLocalUnicast() {
+	all := []candidate{}
+	interfaces, _ := net.Interfaces()
+	for _, network := range interfaces {
+		if network.Flags&net.FlagUp == 0 || network.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		as, _ := network.Addrs()
+		for _, a := range as {
+			ip, _, _ := net.ParseCIDR(a.String())
+			if ip == nil || ip.To4() == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+				continue
+			}
 			address := "http://" + ip.String() + ":" + port
 			if !seen[address] {
 				seen[address] = true
-				out = append(out, address)
+				all = append(all, candidate{url: address, score: networkAddressScore(network.Name, ip)})
 			}
 		}
 	}
-	sort.Strings(out)
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].score != all[j].score {
+			return all[i].score > all[j].score
+		}
+		return all[i].url < all[j].url
+	})
+	out := make([]string, 0, len(all))
+	for _, item := range all {
+		out = append(out, item.url)
+	}
 	return out
+}
+
+// networkAddressScore keeps real Wi-Fi/Ethernet addresses ahead of VPN, WSL,
+// Hyper-V and other virtual adapters. All addresses remain available in the
+// selector, but the first one is encoded into a newly-created QR invitation.
+func networkAddressScore(name string, ip net.IP) int {
+	n := strings.ToLower(strings.TrimSpace(name))
+	score := 0
+	if ip.IsPrivate() {
+		score += 20
+	}
+	v4 := ip.To4()
+	if v4 != nil && v4[0] == 192 && v4[1] == 168 {
+		score += 20
+	}
+	if strings.Contains(n, "wi-fi") || strings.Contains(n, "wifi") || strings.Contains(n, "wlan") || strings.Contains(n, "wireless") || strings.Contains(n, "беспровод") {
+		score += 70
+	}
+	if strings.HasPrefix(n, "ethernet") || strings.HasPrefix(n, "eth") || strings.HasPrefix(n, "en") {
+		score += 50
+	}
+	for _, virtual := range []string{"vethernet", "wsl", "hyper-v", "virtual", "docker", "vmware", "virtualbox", "tunnel", " tun", "tun", " tap", "tap", "vpn", "tailscale", "zerotier", "hamachi", "happ"} {
+		if strings.Contains(n, virtual) {
+			score -= 200
+			break
+		}
+	}
+	return score
 }
 func openURL(url string) {
 	var cmd *exec.Cmd

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,7 +24,8 @@ func fixture(t *testing.T) (*Server, User, string) {
 	t.Cleanup(func() { st.file.Close() })
 	u := User{ID: "owner-0001", Name: "Владелец", Login: "owner", Role: "owner"}
 	token, sess := sessionFor(u)
-	if e = st.commit(Patch{User: &u, Session: &sess, Space: &Workspace{Name: "Test", Currency: "RUB", ID: "workspace-test"}, Place: &Place{ID: "main-place", Name: "Основной", Version: 1}}); e != nil {
+	host := activeHost("Тестовый компьютер", 1)
+	if e = st.commit(Patch{User: &u, Session: &sess, Space: &Workspace{Name: "Test", Currency: "RUB", ID: "workspace-test"}, Place: &Place{ID: "main-place", Name: "Основной", Version: 1}, Host: &host}); e != nil {
 		t.Fatal(e)
 	}
 	a := &Server{st: st, setup: "bootstrap-secret", listen: "127.0.0.1:8787", attempts: map[string][]time.Time{}}
@@ -264,6 +266,81 @@ func TestInviteSingleUseExpiredAndRoles(t *testing.T) {
 		t.Fatal("owner invite")
 	}
 }
+
+func TestGranularRolesAndOwnerProtection(t *testing.T) {
+	a, owner, ownerToken := fixture(t)
+	seed(t, a, ownerToken, 5000)
+	manager := User{ID: "manager-0001", Name: "Менеджер", Login: "manager", Role: "manager"}
+	managerToken, managerSession := sessionFor(manager)
+	operator := User{ID: "operator-001", Name: "Кладовщик", Login: "operator", Role: "operator"}
+	operatorToken, operatorSession := sessionFor(operator)
+	admin := User{ID: "admin-000001", Name: "Администратор", Login: "admin", Role: "admin"}
+	adminToken, adminSession := sessionFor(admin)
+	for _, patch := range []Patch{{User: &manager, Session: &managerSession}, {User: &operator, Session: &operatorSession}, {User: &admin, Session: &adminSession}} {
+		if err := a.st.commit(patch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	command(t, a, operatorToken, Command{ID: identifier(), Type: "out", ItemID: "item-00001", From: "main-place", Qty: 1}, 200)
+	command(t, a, operatorToken, Command{ID: identifier(), Type: "item", Item: &Item{ID: "new-item-001", Name: "Нет", Unit: "шт"}}, 403)
+	command(t, a, managerToken, Command{ID: identifier(), Type: "reverse", Ref: a.st.S.Events[0].ID, Note: "Нет права"}, 403)
+	command(t, a, managerToken, Command{ID: identifier(), Type: "disable", UserID: operator.ID}, 403)
+	command(t, a, adminToken, Command{ID: identifier(), Type: "user-role", UserID: manager.ID, Role: "viewer"}, 200)
+	if a.st.S.Users[manager.ID].Role != "viewer" {
+		t.Fatal("admin role change not saved")
+	}
+	command(t, a, adminToken, Command{ID: identifier(), Type: "user-role", UserID: owner.ID, Role: "viewer"}, 404)
+	command(t, a, ownerToken, Command{ID: identifier(), Type: "disable", UserID: owner.ID}, 403)
+	item := a.st.S.Items["item-00001"]
+	item.Price = 12345
+	if err := a.st.commit(Patch{Item: &item}); err != nil {
+		t.Fatal(err)
+	}
+	code, result := request(t, a, "GET", "/api/state", operatorToken, nil)
+	if code != 200 || result["items"].(map[string]any)["item-00001"].(map[string]any)["price"].(float64) != 0 {
+		t.Fatal("operator received hidden prices")
+	}
+}
+
+func TestMainDeviceTransferRetiresSourceAndImportsWholeState(t *testing.T) {
+	source, owner, token := fixture(t)
+	owner.Salt = random(16)
+	owner.Hash = passwordHash("owner-password-123", owner.Salt)
+	if err := source.st.commit(Patch{User: &owner}); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, source, token, 4321)
+	code, result := request(t, source, "POST", "/api/transfer/prepare", token, map[string]string{"device": "Новый компьютер"})
+	if code != 200 || source.st.S.Host.Status != "retired" {
+		t.Fatalf("transfer not prepared: %d %v", code, result)
+	}
+	command(t, source, token, Command{ID: identifier(), Type: "out", ItemID: "item-00001", From: "main-place", Qty: 1}, 423)
+	data, _ := json.Marshal(result["transfer"])
+	var transfer HostTransfer
+	if err := json.Unmarshal(data, &transfer); err != nil {
+		t.Fatal(err)
+	}
+	if transfer.State.Host.Status != "active" || transfer.State.Host.Epoch != 2 || transfer.State.Host.Device != "Новый компьютер" {
+		t.Fatal("new host metadata invalid")
+	}
+	targetStore, err := openStore(filepath.Join(t.TempDir(), "yarus.journal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer targetStore.file.Close()
+	target := &Server{st: targetStore, setup: "new-host-key", listen: "127.0.0.1:8787", attempts: map[string][]time.Time{}}
+	code, imported := request(t, target, "POST", "/api/transfer/import", "", map[string]any{"setup": "new-host-key", "transfer": transfer})
+	if code != 200 {
+		t.Fatalf("import failed: %d %v", code, imported)
+	}
+	if target.st.S.Stocks[key("item-00001", "main-place")].Qty != 4321 || target.st.S.Host.Device != "Новый компьютер" || len(target.st.S.Users) != 1 || len(target.st.S.Sessions) != 1 {
+		t.Fatal("import did not preserve operational state and owner")
+	}
+	code, _ = request(t, target, "POST", "/api/transfer/import", "", map[string]any{"setup": "new-host-key", "transfer": transfer})
+	if code != 409 {
+		t.Fatal("non-empty target accepted a second import")
+	}
+}
 func TestSetupCannotBeClaimedWithoutBootstrapKey(t *testing.T) {
 	st, e := openStore(filepath.Join(t.TempDir(), "db"))
 	if e != nil {
@@ -314,6 +391,54 @@ func TestJournalRecoveryAndCorruption(t *testing.T) {
 	if st2, e := openStore(path); e == nil {
 		st2.file.Close()
 		t.Fatal("corruption ignored")
+	}
+}
+
+func TestJournalIsEncryptedAtRestAndLegacyIsMigrated(t *testing.T) {
+	a, _, token := fixture(t)
+	seed(t, a, token, 5000)
+	path := a.st.Path
+	spaceID := a.st.S.Space.ID
+	a.st.file.Close()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte("item-00001")) || bytes.Contains(raw, []byte("Основной склад")) || !bytes.Contains(raw, []byte(`"v":1`)) {
+		t.Fatal("journal exposes warehouse data or is not encrypted")
+	}
+	if _, err = os.Stat(journalKeyPath(path)); err != nil {
+		t.Fatal("protected journal key missing")
+	}
+	st, err := openStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.S.Space.ID != spaceID || st.S.Stocks[key("item-00001", "main-place")].Qty != 5000 {
+		t.Fatal("encrypted journal did not reopen")
+	}
+	st.file.Close()
+
+	legacyDir := t.TempDir()
+	legacyPath := filepath.Join(legacyDir, "yarus.journal")
+	patch := Patch{Seq: 1, Space: &Workspace{ID: "legacy-space", Name: "Секретный склад", Currency: "RUB"}, Host: func() *HostInfo { value := activeHost("Старый компьютер", 1); return &value }(), Place: &Place{ID: "main-place", Name: "Основной склад", Version: 1}}
+	data, _ := json.Marshal(patch)
+	record, _ := json.Marshal(Record{Data: data, Hash: hash(string(data))})
+	if err = os.WriteFile(legacyPath, append(record, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := openStore(legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.file.Close()
+	migrated, _ := os.ReadFile(legacyPath)
+	if bytes.Contains(migrated, []byte("Секретный склад")) || !bytes.Contains(migrated, []byte(`"v":1`)) {
+		t.Fatal("legacy journal was not encrypted")
+	}
+	copies, _ := filepath.Glob(filepath.Join(legacyDir, "backups", "*.journal"))
+	if len(copies) != 1 {
+		t.Fatal("exact pre-encryption backup missing")
 	}
 }
 func TestBackupIsReplayableAndPreservesIdempotency(t *testing.T) {
@@ -472,5 +597,15 @@ func TestBackupRotationKeepsNewestThirty(t *testing.T) {
 	}
 	if count != backupRetention {
 		t.Fatalf("kept %d backups, want %d", count, backupRetention)
+	}
+}
+
+func TestPhysicalNetworkAddressRanksAheadOfVirtualAdapters(t *testing.T) {
+	physical := networkAddressScore("Ethernet 2", net.ParseIP("192.168.100.3"))
+	wifi := networkAddressScore("Wi-Fi", net.ParseIP("10.0.0.25"))
+	tunnel := networkAddressScore("happ-default-tun", net.ParseIP("10.6.7.1"))
+	hyperV := networkAddressScore("vEthernet (WSL (Hyper-V firewall))", net.ParseIP("172.28.208.1"))
+	if physical <= tunnel || physical <= hyperV || wifi <= tunnel || wifi <= hyperV {
+		t.Fatalf("physical adapters must rank first: ethernet=%d wifi=%d tunnel=%d hyper-v=%d", physical, wifi, tunnel, hyperV)
 	}
 }

@@ -4,7 +4,7 @@ from pathlib import Path
 import hashlib,base64
 ROOT=Path(__file__).resolve().parents[1]
 html=(ROOT/'web/index.html').read_text(encoding='utf-8');css=(ROOT/'web/style.css').read_text(encoding='utf-8')
-names=['domain.js', 'vendor/qr-encode.js', 'vendor/qr-decode.js', 'vendor/code128-patterns.js', 'codes.js', 'reports.js', 'scanner.js', 'app.js']
+names=['domain.js', 'host.js', 'transfer.js', 'vendor/qr-encode.js', 'vendor/qr-decode.js', 'vendor/code128-patterns.js', 'codes.js', 'reports.js', 'scanner.js', 'app.js']
 scripts=[(ROOT/'web'/n).read_text(encoding='utf-8') for n in names]
 allow=' '.join("'sha256-"+base64.b64encode(hashlib.sha256(s.encode()).digest()).decode()+"'" for s in scripts)
 html=html.replace("script-src 'self'",'script-src '+allow).replace('<link rel="stylesheet" href="style.css">','<style>'+css+'</style>')

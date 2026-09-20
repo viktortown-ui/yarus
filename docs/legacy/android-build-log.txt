@@ -1,3 +1,0 @@
-/mnt/data/yarus-work/yarus/dist/YARUS.html
-/mnt/data/yarus-work/yarus/android/app/src/main/assets/index.html
-APK BUILT: /mnt/data/yarus-work/yarus/dist/YARUS-0.10.0-android.apk, 87763 bytes, 6 classes, 84 methods; NOT DEVICE-TESTED

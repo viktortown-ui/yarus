@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
 const SCREENSHOTS = path.join(ROOT, 'dist', 'RuStore', 'screenshots');
-const REPORT = path.join(ROOT, 'docs', 'YARUS-1.0.0-stock-report-example.pdf');
+const REPORT = path.join(ROOT, 'docs', 'YARUS-1.1.2-stock-report-example.pdf');
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 
 const ADAPTER = `
@@ -34,7 +34,7 @@ async function mount(browser, viewport, deviceScaleFactor) {
     .replace(/<script src="[^"]+"><\/script>/g, '')
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]+>/g, '');
   await page.setContent(html);
-  for (const name of ['domain.js', 'vendor/qr-encode.js', 'vendor/qr-decode.js', 'vendor/code128-patterns.js', 'codes.js', 'reports.js', 'scanner.js']) {
+  for (const name of ['domain.js', 'host.js', 'transfer.js', 'vendor/qr-encode.js', 'vendor/qr-decode.js', 'vendor/code128-patterns.js', 'codes.js', 'reports.js', 'scanner.js']) {
     await page.addScriptTag({ content: source(name) });
   }
   let app = source('app.js').trimEnd();
@@ -48,8 +48,14 @@ async function mount(browser, viewport, deviceScaleFactor) {
   return { context, page, errors };
 }
 
-async function shot(page, folder, name) {
-  await page.evaluate(() => { window.scrollTo(0, 0); document.querySelector('#toasts').innerHTML = ''; });
+async function shot(page, folder, name, selector = '') {
+  await page.evaluate(value => {
+    if (value) {
+      const element = document.querySelector(value);
+      if (element) window.scrollTo(0, Math.max(0, window.scrollY + element.getBoundingClientRect().top - 180));
+    } else window.scrollTo(0, 0);
+    document.querySelector('#toasts').innerHTML = '';
+  }, selector);
   await page.screenshot({ path: path.join(folder, name), fullPage: false, animations: 'disabled' });
 }
 
@@ -79,6 +85,19 @@ async function phoneShots(browser) {
   await page.locator('[data-action="close-modal"]').first().click();
   await page.locator('.mobile-nav [data-nav="settings"]').click();
   await shot(page, folder, '05-settings-1080x1920.png');
+  await page.evaluate(() => { window.AndroidFiles = { portableInfo: () => JSON.stringify({ attached: false, name: '', bytes: 0 }) }; render(); });
+  await shot(page, folder, '09-portable-file-1080x1920.png', '.portable-box');
+  await page.evaluate(() => accountModal('join'));
+  const inviteScan = page.getByRole('button', { name: 'Сканировать QR камерой' });
+  assert.equal(await inviteScan.isVisible(), true);
+  await shot(page, folder, '08-qr-connect-1080x1920.png');
+  await inviteScan.click();
+  await page.waitForSelector('#scan-root');
+  await page.locator('#scan-manual').fill(await page.evaluate(() => YarusCodes.invite('http://192.168.100.3:8787', 'invite-token_1234567890', Math.floor(Date.now() / 1000) + 3600)));
+  await page.locator('#scan-manual-form button').click();
+  assert.equal(await page.locator('#account-form [name="server"]').inputValue(), 'http://192.168.100.3:8787');
+  assert.equal(await page.locator('#account-form [name="code"]').inputValue(), 'invite-token_1234567890');
+  await page.locator('[data-action="close-modal"]').first().click();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.deepEqual(errors, []);
   await context.close();
@@ -96,6 +115,8 @@ async function tabletShotsAndReport(browser) {
   await page.locator('.nav [data-nav="history"]').click();
   await shot(page, folder, '04-history-1600x2560.png');
   await page.locator('.nav [data-nav="settings"]').click();
+  await page.evaluate(() => { window.AndroidFiles = { portableInfo: () => JSON.stringify({ attached: false, name: '', bytes: 0 }) }; render(); });
+  await shot(page, folder, '06-portable-file-1600x2560.png', '.portable-box');
   await page.locator('[data-action="export-pdf"]').click();
   await shot(page, folder, '05-pdf-report-1600x2560.png');
   const downloadEvent = page.waitForEvent('download');

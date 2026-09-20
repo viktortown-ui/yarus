@@ -2,6 +2,15 @@
 (function(root){
  'use strict';
  const MAX_QTY=1e12,UNITS=['шт','кг','г','л','мл','м','м²','м³','упак','компл','т'];
+ const PERMISSIONS=['catalog','places','stock','reverse','settings','team','full_export','backup','view_prices','host_transfer'];
+ const ROLE_PERMISSIONS={
+  owner:[...PERMISSIONS],
+  admin:PERMISSIONS.filter(x=>x!=='host_transfer'),
+  manager:['catalog','places','stock','view_prices'],
+  editor:['catalog','places','stock','view_prices'],
+  operator:['stock'],
+  viewer:[]
+ };
  const copy=x=>JSON.parse(JSON.stringify(x));
  const validId=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{8,80}$/.test(x)&&!['__proto__','constructor','prototype'].includes(x);
  const fail=s=>{throw new Error(s)};
@@ -14,6 +23,15 @@
  }
  function createState(name='Мой склад',demo=false){return {format:'yarus-data',version:1,seq:0,space:{name,currency:'RUB',id:newId()},items:{},places:{'main-place':{id:'main-place',name:'Основной склад',note:'',version:1}},stocks:{},events:[],eventCount:0,me:{id:'local-owner',name:'Вы',login:'local',role:'owner'},demo};}
  function newId(){const bytes=new Uint8Array(16);globalThis.crypto.getRandomValues(bytes);return [...bytes].map(v=>v.toString(16).padStart(2,'0')).join('');}
+ function permissionsFor(actor){
+  const granted=new Set(ROLE_PERMISSIONS[actor?.role]||[]);
+  if(actor?.permissions&&typeof actor.permissions==='object')for(const [name,value] of Object.entries(actor.permissions)){
+   if(!PERMISSIONS.includes(name))continue;if(value)granted.add(name);else granted.delete(name);
+  }
+  return Object.fromEntries(PERMISSIONS.map(name=>[name,granted.has(name)]));
+ }
+ function can(actor,permission){return !!permissionsFor(actor)[permission];}
+ function requirePermission(actor,permission,message){if(!can(actor,permission))fail(message||'Недостаточно прав для этого действия.');}
  const key=(item,place)=>item+'@'+place;
  function total(s,id,place=''){return Object.values(s.stocks).filter(x=>x.item===id&&(!place||x.place===place)).reduce((v,x)=>v+x.qty,0);}
  function validateItem(s,item){
@@ -29,24 +47,25 @@
  }
  function execute(state,c,actor=state.me){
   if(!validId(c.id))fail('Некорректный идентификатор операции.');
-  if(actor.role==='viewer')fail('У вас доступ только для просмотра.');
   const s=copy(state);s.localSeen=s.localSeen||{};const intent=JSON.stringify(c);
   if(s.localSeen[c.id]){if(s.localSeen[c.id]!==intent)fail('Этот номер уже использован другой операцией.');return s;}
   if(!text(c.note||'',1000)||!text(c.ref||'',100))fail('Слишком длинное примечание.');
-  if(c.type==='item'){const x=validateItem(s,c.item);s.items[x.id]=x;}
+  if(c.type==='item'){requirePermission(actor,'catalog','У вас нет права изменять каталог.');const x=validateItem(s,c.item);s.items[x.id]=x;}
   else if(c.type==='place'){
+   requirePermission(actor,'places','У вас нет права изменять места хранения.');
    const x=copy(c.place);x.name=(x.name||'').trim();x.note=x.note||'';
    if(!validId(x.id)||!x.name||!text(x.name,100)||!text(x.note,200))fail('Укажите название места до 100 символов.');
    if((s.places[x.id]?.version||0)!==x.version)fail('Место уже изменилось.');
    if(!s.places[x.id]&&Object.keys(s.places).length>=200)fail('Лимит — 200 мест.');
    if(Object.values(s.places).some(p=>p.id!==x.id&&p.name.toLowerCase()===x.name.toLowerCase()))fail('Такое место уже существует.');x.version++;s.places[x.id]=x;
   }else if(c.type==='space'){
-   if(actor.role!=='owner')fail('Настройки меняет владелец.');
+   requirePermission(actor,'settings','У вас нет права менять настройки склада.');
    if(!text(c.space?.name,80)||!c.space.name.trim()||!['RUB','EUR','USD'].includes(c.space.currency))fail('Проверьте название склада и валюту.');s.space={...copy(c.space),id:s.space.id||newId()};
   }else if(['in','out','transfer','count','reverse'].includes(c.type)){
+   requirePermission(actor,c.type==='reverse'?'reverse':'stock',c.type==='reverse'?'У вас нет права отменять движения.':'У вас нет права проводить движения.');
    const e={id:c.id,kind:c.type,item:c.itemId||'',from:c.from||'',to:c.to||'',qty:c.qty||0,note:c.note||'',ref:c.ref||'',actor:actor.id,actorName:actor.name,at:new Date().toISOString(),seq:s.seq+1,changes:[]};
    if(c.type==='reverse'){
-    if(actor.role!=='owner')fail('Отменяет владелец.');const original=s.events.find(x=>x.id===c.ref);
+    const original=s.events.find(x=>x.id===c.ref);
     if(!original||original.kind==='reverse')fail('Исходная операция не найдена.');
     if(s.events.some(x=>x.kind==='reverse'&&x.ref===c.ref))fail('Операция уже отменена.');
     if(!(c.note||'').trim())fail('Укажите причину отмены.');
@@ -120,6 +139,6 @@
   if(quoted)fail('В CSV не закрыты кавычки.');row.push(cell);if(row.some(x=>x.trim()))rows.push(row);return rows;
  }
  function csvCell(value){let s=String(value??'');if(/^[\s]*[=+\-@]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}
- const api={MAX_QTY,UNITS,copy,validId,decimal,createState,key,total,execute,validateBackup,parseCSV,csvCell};
+ const api={MAX_QTY,UNITS,PERMISSIONS,ROLE_PERMISSIONS,copy,validId,decimal,createState,newId,key,total,permissionsFor,can,execute,validateBackup,parseCSV,csvCell};
  if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.YarusDomain=api;
 })(typeof window!=='undefined'?window:globalThis);
