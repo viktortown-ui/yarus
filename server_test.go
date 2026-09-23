@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -25,12 +26,29 @@ func fixture(t *testing.T) (*Server, User, string) {
 	u := User{ID: "owner-0001", Name: "Владелец", Login: "owner", Role: "owner"}
 	token, sess := sessionFor(u)
 	host := activeHost("Тестовый компьютер", 1)
-	if e = st.commit(Patch{User: &u, Session: &sess, Space: &Workspace{Name: "Test", Currency: "RUB", ID: "workspace-test"}, Place: &Place{ID: "main-place", Name: "Основной", Version: 1}, Host: &host}); e != nil {
+	transportKey := random(32)
+	if e = st.commit(Patch{User: &u, Session: &sess, Space: &Workspace{Name: "Test", Currency: "RUB", ID: "workspace-test"}, Place: &Place{ID: "main-place", Name: "Основной", Version: 1}, Host: &host, TransportKey: &transportKey}); e != nil {
 		t.Fatal(e)
 	}
 	a := &Server{st: st, setup: "bootstrap-secret", listen: "127.0.0.1:8787", attempts: map[string][]time.Time{}}
 	return a, u, token
 }
+
+func TestSecureReplayCacheStaysBounded(t *testing.T) {
+	a := &Server{}
+	for index := 0; index < 20025; index++ {
+		if !a.acceptSecureID(fmt.Sprintf("secure-request-%05d", index)) {
+			t.Fatalf("fresh secure request %d was rejected", index)
+		}
+	}
+	if len(a.secureIDs) != 20000 {
+		t.Fatalf("secure replay cache grew to %d entries", len(a.secureIDs))
+	}
+	if a.acceptSecureID("secure-request-20024") {
+		t.Fatal("recent replay was accepted")
+	}
+}
+
 func request(t *testing.T, a *Server, method, path, token string, body any) (int, map[string]any) {
 	t.Helper()
 	var b []byte
@@ -74,6 +92,72 @@ func TestExactFractionalStock(t *testing.T) {
 	command(t, a, token, Command{ID: identifier(), Type: "out", ItemID: "item-00001", From: "main-place", Qty: 300}, 200)
 	if a.st.S.Stocks[key("item-00001", "main-place")].Qty != 0 {
 		t.Fatal("fractional residue")
+	}
+}
+
+func TestHistorySegmentsKeepAllEvents(t *testing.T) {
+	s := blankState()
+	for index := 0; index < historySegmentSize+7; index++ {
+		appendHistory(&s, Event{ID: fmt.Sprintf("event-%08d", index)})
+	}
+	if len(s.HistorySegments) != 1 || len(s.HistorySegments[0]) != historySegmentSize || len(s.Events) != 7 || s.EventCount != historySegmentSize+7 {
+		t.Fatalf("history was not segmented safely: segments=%d current=%d count=%d", len(s.HistorySegments), len(s.Events), s.EventCount)
+	}
+	recent := recentHistory(&s, 10)
+	if len(recent) != 10 || recent[0].ID != fmt.Sprintf("event-%08d", historySegmentSize-3) || recent[9].ID != fmt.Sprintf("event-%08d", historySegmentSize+6) {
+		t.Fatal("recent history crossed a segment incorrectly")
+	}
+}
+
+func TestRecentCommandCacheIsBounded(t *testing.T) {
+	state := blankState()
+	for index := 1; index <= recentCommandLimit+7; index++ {
+		apply(&state, Patch{Seq: int64(index), Key: fmt.Sprintf("owner:command-%08d", index), Intent: fmt.Sprintf("intent-%d", index)})
+	}
+	if len(state.Seen) != recentCommandLimit {
+		t.Fatalf("recent command cache grew to %d", len(state.Seen))
+	}
+	if _, exists := state.Seen["owner:command-00000001"]; exists {
+		t.Fatal("old idempotency entry was not pruned")
+	}
+	if _, exists := state.Seen[fmt.Sprintf("owner:command-%08d", recentCommandLimit+7)]; !exists {
+		t.Fatal("new idempotency entry was pruned")
+	}
+}
+
+func TestFullStateImportPreservesSequenceAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "yarus.journal")
+	store, err := openStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported := blankState()
+	imported.Seq = 321
+	imported.Space = Workspace{ID: "workspace-sequence", Name: "Перенесённый склад", Currency: "RUB"}
+	if err = store.commit(Patch{Full: &imported}); err != nil {
+		t.Fatal(err)
+	}
+	if store.S.Seq != 321 {
+		t.Fatalf("import sequence reset to %d", store.S.Seq)
+	}
+	if err = store.file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = openStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.file.Close()
+	if store.S.Seq != 321 {
+		t.Fatalf("reopened import sequence reset to %d", store.S.Seq)
+	}
+	space := store.S.Space
+	space.Name = "Склад после переноса"
+	if err = store.commit(Patch{Space: &space}); err != nil {
+		t.Fatal(err)
+	}
+	if store.S.Seq != 322 {
+		t.Fatalf("next change received sequence %d, want 322", store.S.Seq)
 	}
 }
 func TestInsufficientStockIsAtomic(t *testing.T) {
@@ -302,7 +386,7 @@ func TestGranularRolesAndOwnerProtection(t *testing.T) {
 	}
 }
 
-func TestMainDeviceTransferRetiresSourceAndImportsWholeState(t *testing.T) {
+func TestMainDeviceTransferRequiresTwoDeviceConfirmation(t *testing.T) {
 	source, owner, token := fixture(t)
 	owner.Salt = random(16)
 	owner.Hash = passwordHash("owner-password-123", owner.Salt)
@@ -311,7 +395,7 @@ func TestMainDeviceTransferRetiresSourceAndImportsWholeState(t *testing.T) {
 	}
 	seed(t, source, token, 4321)
 	code, result := request(t, source, "POST", "/api/transfer/prepare", token, map[string]string{"device": "Новый компьютер"})
-	if code != 200 || source.st.S.Host.Status != "retired" {
+	if code != 200 || source.st.S.Host.Status != "transfer_pending" {
 		t.Fatalf("transfer not prepared: %d %v", code, result)
 	}
 	command(t, source, token, Command{ID: identifier(), Type: "out", ItemID: "item-00001", From: "main-place", Qty: 1}, 423)
@@ -320,7 +404,7 @@ func TestMainDeviceTransferRetiresSourceAndImportsWholeState(t *testing.T) {
 	if err := json.Unmarshal(data, &transfer); err != nil {
 		t.Fatal(err)
 	}
-	if transfer.State.Host.Status != "active" || transfer.State.Host.Epoch != 2 || transfer.State.Host.Device != "Новый компьютер" {
+	if transfer.Version != 2 || transfer.State.Host.Status != "awaiting_activation" || transfer.State.Host.Epoch != 2 || transfer.State.Host.Device != "Новый компьютер" || transfer.State.Transfer == nil || transfer.State.Transfer.ActivationToken != "" {
 		t.Fatal("new host metadata invalid")
 	}
 	targetStore, err := openStore(filepath.Join(t.TempDir(), "yarus.journal"))
@@ -333,14 +417,106 @@ func TestMainDeviceTransferRetiresSourceAndImportsWholeState(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("import failed: %d %v", code, imported)
 	}
-	if target.st.S.Stocks[key("item-00001", "main-place")].Qty != 4321 || target.st.S.Host.Device != "Новый компьютер" || len(target.st.S.Users) != 1 || len(target.st.S.Sessions) != 1 {
+	if target.st.S.Stocks[key("item-00001", "main-place")].Qty != 4321 || target.st.S.Host.Device != "Новый компьютер" || target.st.S.Host.Status != "awaiting_activation" || len(target.st.S.Users) != 1 || len(target.st.S.Sessions) != 1 {
 		t.Fatal("import did not preserve operational state and owner")
 	}
+	targetToken, _ := imported["token"].(string)
+	receiptCode, _ := imported["receiptCode"].(string)
+	if targetToken == "" || receiptCode == "" {
+		t.Fatal("target did not receive activation credentials")
+	}
+	command(t, target, targetToken, Command{ID: identifier(), Type: "out", ItemID: "item-00001", From: "main-place", Qty: 1}, 423)
+	code, confirmed := request(t, source, "POST", "/api/transfer/confirm", token, map[string]string{"receiptCode": receiptCode})
+	activationToken, _ := confirmed["activationToken"].(string)
+	if code != 200 || activationToken == "" || source.st.S.Host.Status != "retired" {
+		t.Fatalf("source confirmation failed: %d %v", code, confirmed)
+	}
+	code, activated := request(t, target, "POST", "/api/transfer/activate", targetToken, map[string]string{"activationToken": activationToken})
+	if code != 200 || target.st.S.Host.Status != "active" || target.st.S.Transfer != nil {
+		t.Fatalf("target activation failed: %d %v", code, activated)
+	}
+	command(t, target, targetToken, Command{ID: identifier(), Type: "out", ItemID: "item-00001", From: "main-place", Qty: 1}, 200)
 	code, _ = request(t, target, "POST", "/api/transfer/import", "", map[string]any{"setup": "new-host-key", "transfer": transfer})
 	if code != 409 {
-		t.Fatal("non-empty target accepted a second import")
+		t.Fatal("active target accepted a second import")
 	}
 }
+
+func TestPendingTransferCanBeCancelled(t *testing.T) {
+	source, _, token := fixture(t)
+	code, _ := request(t, source, "POST", "/api/transfer/prepare", token, map[string]string{"device": "Планшет"})
+	if code != 200 || source.st.S.Host.Status != "transfer_pending" {
+		t.Fatal("transfer was not prepared")
+	}
+	code, _ = request(t, source, "POST", "/api/transfer/cancel", token, map[string]string{})
+	if code != 200 || source.st.S.Host.Status != "active" || source.st.S.Transfer != nil {
+		t.Fatal("pending transfer was not cancelled")
+	}
+	seed(t, source, token, 1000)
+}
+
+func TestLocalHTTPRequiresEncryptedEnvelope(t *testing.T) {
+	a, owner, _ := fixture(t)
+	owner.Salt = random(16)
+	owner.Hash = passwordHash("owner-password-123", owner.Salt)
+	if err := a.st.commit(Patch{User: &owner}); err != nil {
+		t.Fatal(err)
+	}
+	plainBody, _ := json.Marshal(map[string]string{"login": "owner", "password": "owner-password-123"})
+	plain := httptest.NewRequest("POST", "/api/login", bytes.NewReader(plainBody))
+	plain.RemoteAddr = "192.168.1.50:4321"
+	plain.Header.Set("Content-Type", "application/json")
+	plainResponse := httptest.NewRecorder()
+	a.ServeHTTP(plainResponse, plain)
+	if plainResponse.Code != 426 {
+		t.Fatalf("plain LAN login accepted: %d", plainResponse.Code)
+	}
+	requestBody, _ := json.Marshal(transportRequest{Method: "POST", Path: "/api/login", Body: plainBody, At: time.Now().UnixMilli()})
+	envelope, err := sealTransport(a.st.S.TransportKey, identifier(), "request", requestBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, _ := json.Marshal(envelope)
+	if bytes.Contains(wire, []byte("owner-password-123")) {
+		t.Fatal("password leaked into HTTP envelope")
+	}
+	secure := httptest.NewRequest("POST", "/api/secure", bytes.NewReader(wire))
+	secure.RemoteAddr = "192.168.1.50:4321"
+	secure.Header.Set("Content-Type", "application/json")
+	secureResponse := httptest.NewRecorder()
+	a.ServeHTTP(secureResponse, secure)
+	if secureResponse.Code != 200 {
+		t.Fatalf("secure request failed: %d %s", secureResponse.Code, secureResponse.Body.String())
+	}
+	replay := httptest.NewRequest("POST", "/api/secure", bytes.NewReader(wire))
+	replay.RemoteAddr = "192.168.1.50:4321"
+	replay.Header.Set("Content-Type", "application/json")
+	replayResponse := httptest.NewRecorder()
+	a.ServeHTTP(replayResponse, replay)
+	if replayResponse.Code != 409 {
+		t.Fatalf("secure request replay accepted: %d", replayResponse.Code)
+	}
+	var responseEnvelope transportEnvelope
+	if err = json.Unmarshal(secureResponse.Body.Bytes(), &responseEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := openTransport(a.st.S.TransportKey, responseEnvelope, "response")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response transportResponse
+	if err = json.Unmarshal(opened, &response); err != nil || response.Status != 200 {
+		t.Fatalf("encrypted login response invalid: %v %s", err, opened)
+	}
+	var login map[string]any
+	if err = json.Unmarshal(response.Body, &login); err != nil || login["token"] == "" {
+		t.Fatal("encrypted login did not return a token")
+	}
+	if strings.Contains(secureResponse.Body.String(), login["token"].(string)) {
+		t.Fatal("token leaked into HTTP response")
+	}
+}
+
 func TestSetupCannotBeClaimedWithoutBootstrapKey(t *testing.T) {
 	st, e := openStore(filepath.Join(t.TempDir(), "db"))
 	if e != nil {

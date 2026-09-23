@@ -12,15 +12,16 @@ test('0.9.1 real-format backup restored with stock, history, units, factory code
 test('0.10 full backup preserves namespace and its existing labels',()=>{const s=D.validateBackup(legacy);const s2=D.validateBackup(JSON.parse(JSON.stringify(s)));assert.equal(s2.space.id,s.space.id);assert.equal(D.total(s2,'legacy-canister'),17000);});
 test('renaming local warehouse cannot change QR namespace',()=>{const s=D.validateBackup(legacy);const s2=D.execute(s,{id:'rename-namespace',type:'space',space:{name:'Переименован',currency:'EUR',id:'forged-namespace'}});assert.equal(s2.space.id,s.space.id);assert.equal(D.total(s2,'legacy-canister'),17000);});
 test('invalid namespace backup rejected without mutating input',()=>{const s=D.validateBackup(legacy);s.space.id='__proto__';assert.throws(()=>D.validateBackup(s));});
-test('universal yarus.json metadata stays compatible with version 1 backup reader',()=>{
+test('1.1.2 universal yarus.json stays compatible with the current backup reader',()=>{
  const source=D.validateBackup(legacy);source.portable={format:1,appVersion:'1.1.2',updatedAt:'2026-09-21T00:00:00.000Z'};
  const restored=D.validateBackup(JSON.parse(JSON.stringify(source)));
  assert.equal(restored.space.id,source.space.id);assert.equal(D.total(restored,'legacy-canister'),17000);
  assert.equal(restored.portable,undefined,'portable transport metadata must not enter working state');
 });
-test('current user interface exposes only the 1.1.2 application version',()=>{
+test('current user interface exposes the 1.2.0 application version',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
- assert.match(source,/const APP_VERSION='1\.1\.2'/);
+ assert.match(source,/const APP_VERSION='1\.2\.0'/);
+ assert.doesNotMatch(source,/const APP_VERSION='1\.1\.2'/);
  assert.doesNotMatch(source,/Версия 0\.10\.0 beta/);
 });
 test('settings expose stable official download pages without embedding a warehouse file',()=>{

@@ -15,6 +15,8 @@ public class Bridge {
     @JavascriptInterface public String loadHostState() { return activity.loadHostState(); }
     @JavascriptInterface public boolean saveHostState(String json) { return activity.saveHostState(json); }
     @JavascriptInterface public long hostStateSize() { return activity.hostStateSize(); }
+    @JavascriptInterface public long hostBackupSize() { return activity.hostBackupSize(); }
+    @JavascriptInterface public int hostBackupCount() { return activity.hostBackupCount(); }
     @JavascriptInterface public String startHostServer() { return activity.startHostServer(); }
     @JavascriptInterface public void stopHostServer() { activity.stopHostServer(); }
     @JavascriptInterface public void hostRespond(String id, int status, String body) {

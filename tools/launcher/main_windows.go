@@ -104,70 +104,76 @@ func acquireMigrationLock(path string) (*os.File, error) {
 	return os.NewFile(uintptr(handle), path), nil
 }
 
-func migratePreviousData(root, targetDirectory string) (bool, error) {
+func migratePreviousData(root, targetDirectory string) (string, error) {
 	newData := filepath.Join(targetDirectory, "data")
 	if !releaseDataIsEmpty(newData) {
-		return false, nil
+		return "", nil
 	}
-	oldRelative := filepath.Join("YARUS-1.1.1-READY", "01-Windows", "YARUS-1.1.1-Windows-x64", "data")
-	var oldData, oldInstall string
-	for _, base := range []string{filepath.Dir(root), root} {
-		candidate := filepath.Join(base, oldRelative)
-		journal, err := os.Stat(filepath.Join(candidate, "yarus.journal"))
-		if err == nil && !journal.IsDir() && journal.Size() > 0 {
-			oldData = candidate
-			oldInstall = filepath.Dir(candidate)
+	var oldData, oldInstall, sourceVersion string
+	for _, version := range []string{"1.1.2", "1.1.1"} {
+		oldRelative := filepath.Join("YARUS-"+version+"-READY", "01-Windows", "YARUS-"+version+"-Windows-x64", "data")
+		for _, base := range []string{filepath.Dir(root), root} {
+			candidate := filepath.Join(base, oldRelative)
+			journal, err := os.Stat(filepath.Join(candidate, "yarus.journal"))
+			if err == nil && !journal.IsDir() && journal.Size() > 0 {
+				oldData = candidate
+				oldInstall = filepath.Dir(candidate)
+				sourceVersion = version
+				break
+			}
+		}
+		if oldData != "" {
 			break
 		}
 	}
 	if oldData == "" {
-		return false, nil
+		return "", nil
 	}
 	lock, err := acquireMigrationLock(filepath.Join(oldData, "server.lock"))
 	if err != nil {
-		return false, fmt.Errorf("закройте ЯРУС 1.1.1 и повторите запуск: старая база сейчас открыта")
+		return "", fmt.Errorf("закройте ЯРУС %s и повторите запуск: прежняя база сейчас открыта", sourceVersion)
 	}
 	defer lock.Close()
 	stage, err := os.MkdirTemp(targetDirectory, "data-migration-")
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	defer os.RemoveAll(stage)
 	if err = copyTree(oldData, stage); err != nil {
-		return false, fmt.Errorf("не удалось скопировать прежнюю базу: %w", err)
+		return "", fmt.Errorf("не удалось скопировать прежнюю базу: %w", err)
 	}
-	// YARUS 1.1.1 could place WebView2 state beside YARUS.exe on some computers.
-	// Prefer that active profile and move it under data, where 1.1.2 keeps it reliably.
+	// Older releases could place WebView2 state beside YARUS.exe on some computers.
+	// Prefer that active profile and move it under data, where current releases keep it reliably.
 	externalProfile := filepath.Join(oldInstall, "YARUS.exe.WebView2")
 	if entries, profileErr := os.ReadDir(externalProfile); profileErr == nil && len(entries) > 0 {
 		profileTarget := filepath.Join(stage, "desktop-webview")
 		if err = os.RemoveAll(profileTarget); err != nil {
-			return false, fmt.Errorf("не удалось подготовить профиль прежней версии: %w", err)
+			return "", fmt.Errorf("не удалось подготовить профиль прежней версии: %w", err)
 		}
 		if err = copyTree(externalProfile, profileTarget); err != nil {
-			return false, fmt.Errorf("не удалось скопировать сохранённый вход: %w", err)
+			return "", fmt.Errorf("не удалось скопировать сохранённый вход: %w", err)
 		}
 	}
 	for _, required := range []string{"yarus.journal", "yarus.key"} {
 		info, statErr := os.Stat(filepath.Join(stage, required))
 		if statErr != nil || info.IsDir() || info.Size() == 0 {
-			return false, fmt.Errorf("в прежней версии отсутствует обязательный файл %s", required)
+			return "", fmt.Errorf("в прежней версии отсутствует обязательный файл %s", required)
 		}
 	}
 	if !releaseDataIsEmpty(newData) {
-		return false, fmt.Errorf("новая папка данных изменилась во время обновления")
+		return "", fmt.Errorf("новая папка данных изменилась во время обновления")
 	}
 	emptyBackup := newData + ".empty"
 	_ = os.RemoveAll(emptyBackup)
 	if err = os.Rename(newData, emptyBackup); err != nil && !os.IsNotExist(err) {
-		return false, err
+		return "", err
 	}
 	if err = os.Rename(stage, newData); err != nil {
 		_ = os.Rename(emptyBackup, newData)
-		return false, err
+		return "", err
 	}
 	_ = os.RemoveAll(emptyBackup)
-	return true, nil
+	return sourceVersion, nil
 }
 
 func main() {
@@ -177,20 +183,20 @@ func main() {
 		return
 	}
 	root := filepath.Dir(executable)
-	relative := filepath.Join("01-Windows", "YARUS-1.1.2-Windows-x64", "YARUS.exe")
+	relative := filepath.Join("01-Windows", "YARUS-1.2.0-Windows-x64", "YARUS.exe")
 	candidates := []string{
 		filepath.Join(root, relative),
-		filepath.Join(root, "YARUS-1.1.2-READY", relative),
+		filepath.Join(root, "YARUS-1.2.0-READY", relative),
 	}
 	for _, target := range candidates {
 		if info, statErr := os.Stat(target); statErr == nil && !info.IsDir() {
-			migrated, migrationErr := migratePreviousData(root, filepath.Dir(target))
+			sourceVersion, migrationErr := migratePreviousData(root, filepath.Dir(target))
 			if migrationErr != nil {
 				alert("Обновление не запущено: " + migrationErr.Error() + "\n\nДанные не изменены.")
 				return
 			}
-			if migrated {
-				notice("Склад из ЯРУС 1.1.1 безопасно скопирован в 1.1.2.\n\nПроверьте данные в новой версии, прежде чем удалять старую папку.")
+			if sourceVersion != "" {
+				notice("Склад из ЯРУС " + sourceVersion + " безопасно скопирован в 1.2.0.\n\nПроверьте данные в новой версии, прежде чем удалять старую папку.")
 			}
 			command := exec.Command(target)
 			command.Dir = filepath.Dir(target)

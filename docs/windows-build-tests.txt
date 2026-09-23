@@ -1,8 +1,8 @@
-PASS: Windows x64 cross-build; separate GUI and console subsystems; current shared UI embedded.
-PASS: YARUS.exe has 7 icon sizes and asInvoker manifest.
-PASS: packaged YARUS-server.exe started on Windows; /api/info returned 1.1.2.
-PASS: portable yarus.journal, OPEN-YARUS.url and directory lock were created inside the package data folder.
-PASS: YARUS.exe/WebView2 GUI was exercised in the release acceptance run and created its portable WebView profile.
-PASS: real 1.1.1 journal, DPAPI key and WebView2 profile migrated to 1.1.2 with matching source/target hashes.
-PASS: migrated server returned ready=true and host.status=active; internal journal backups exist.
-NOT TESTED: physical webcam, printer, Authenticode reputation or every Windows/WebView2 version.
+PASS: Windows x64 GUI/server/launcher built with current shared UI and icons.
+PASS: YARUS.exe has 7 icon sizes and an asInvoker manifest.
+PASS: packaged server handled two authenticated users and exact-once retry.
+PASS: journal and sessions survived a real packaged-server restart.
+PASS: /api/info reports 1.2.0 in the current server tests.
+PASS: launcher migration 1.1.2 -> 1.2.0 copies journal, DPAPI key and WebView2
+      profile once; source data stays unchanged and stale lock/URL are omitted.
+NOT TESTED: physical webcam/printer, Authenticode reputation or every WebView2 build.

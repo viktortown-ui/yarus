@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
 const SCREENSHOTS = path.join(ROOT, 'dist', 'RuStore', 'screenshots');
-const REPORT = path.join(ROOT, 'docs', 'YARUS-1.1.2-stock-report-example.pdf');
+const REPORT = path.join(ROOT, 'docs', 'YARUS-1.2.0-stock-report-example.pdf');
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 
 const ADAPTER = `
@@ -34,7 +34,7 @@ async function mount(browser, viewport, deviceScaleFactor) {
     .replace(/<script src="[^"]+"><\/script>/g, '')
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]+>/g, '');
   await page.setContent(html);
-  for (const name of ['domain.js', 'host.js', 'transfer.js', 'vendor/qr-encode.js', 'vendor/qr-decode.js', 'vendor/code128-patterns.js', 'codes.js', 'reports.js', 'scanner.js']) {
+  for (const name of ['domain.js', 'transport.js', 'host.js', 'transfer.js', 'vendor/qr-encode.js', 'vendor/qr-decode.js', 'vendor/code128-patterns.js', 'codes.js', 'reports.js', 'scanner.js']) {
     await page.addScriptTag({ content: source(name) });
   }
   let app = source('app.js').trimEnd();
@@ -93,7 +93,7 @@ async function phoneShots(browser) {
   await shot(page, folder, '08-qr-connect-1080x1920.png');
   await inviteScan.click();
   await page.waitForSelector('#scan-root');
-  await page.locator('#scan-manual').fill(await page.evaluate(() => YarusCodes.invite('http://192.168.100.3:8787', 'invite-token_1234567890', Math.floor(Date.now() / 1000) + 3600)));
+  await page.locator('#scan-manual').fill(await page.evaluate(() => YarusCodes.invite('http://192.168.100.3:8787', 'invite-token_1234567890', Math.floor(Date.now() / 1000) + 3600, 'A'.repeat(43))));
   await page.locator('#scan-manual-form button').click();
   assert.equal(await page.locator('#account-form [name="server"]').inputValue(), 'http://192.168.100.3:8787');
   assert.equal(await page.locator('#account-form [name="code"]').inputValue(), 'invite-token_1234567890');

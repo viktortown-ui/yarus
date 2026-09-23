@@ -26,7 +26,7 @@ import java.nio.charset.StandardCharsets;
 public final class PortableWarehouseFile {
     public static final int REQUEST_CREATE = 1004;
     public static final int REQUEST_OPEN = 1005;
-    private static final long MAX_BYTES = 32L << 20;
+    private static final long MAX_BYTES = 256L << 20;
     private static final String PREFS = "yarus_portable_file";
     private static final String PREF_URI = "uri";
     private static final String PREF_NAME = "name";
@@ -132,7 +132,7 @@ public final class PortableWarehouseFile {
     private void write(Uri uri, String json) throws Exception {
         if (json == null || json.isEmpty()) throw new IllegalArgumentException("Нет данных склада для сохранения.");
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length > MAX_BYTES) throw new IllegalArgumentException("Файл склада больше 32 МБ.");
+        if (bytes.length > MAX_BYTES) throw new IllegalArgumentException("Файл склада больше 256 МБ.");
         ContentResolver resolver = context.getContentResolver();
         try (ParcelFileDescriptor descriptor = resolver.openFileDescriptor(uri, "rwt")) {
             if (descriptor == null) throw new IllegalStateException("Android не открыл файл для записи.");
@@ -153,7 +153,7 @@ public final class PortableWarehouseFile {
             while ((count = input.read(buffer)) != -1) {
                 if (count == 0) continue;
                 output.write(buffer, 0, count);
-                if (output.size() > MAX_BYTES) throw new IllegalStateException("Файл склада больше 32 МБ.");
+                if (output.size() > MAX_BYTES) throw new IllegalStateException("Файл склада больше 256 МБ.");
             }
             return output.toString(StandardCharsets.UTF_8.name());
         }

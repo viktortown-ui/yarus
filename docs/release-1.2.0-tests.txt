@@ -1,0 +1,16 @@
+YARUS 1.2.0 RELEASE TEST SUMMARY — 2026-09-24
+
+PASS: 51/51 Node tests and all Go server/launcher tests.
+PASS: two-device safe transfer, cancellation and final activation.
+PASS: segmented history beyond 5000 events; no 200000-event export dead-end.
+PASS: exact large-price arithmetic and bounded idempotency cache.
+PASS: encrypted LAN envelope; plain remote HTTP, tampering and replay rejected.
+PASS: phone/tablet UI, visible QR camera button, PDF and 15 RuStore screenshots.
+PASS: Android release build and lintVital; signed APK v2/v3 and signed AAB.
+PASS: real emulator upgrade 1.0.0 -> 1.2.0 retained firstInstallTime and 12 items.
+PASS: repeated install of the final 1.2.0 APK retained application data.
+PASS: Windows package, real two-client server flow and restart persistence.
+PASS: launcher migration 1.1.2 -> 1.2.0 preserves source and copies data once.
+
+NOT LIVE-VERIFIED: physical camera/printer, two physical LAN devices and the
+published RuStore update flow. External publication is verified separately.

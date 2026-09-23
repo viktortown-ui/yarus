@@ -30,7 +30,7 @@ init();
       .replace(/<script src="[^"]+"><\/script>/g, '')
       .replace(/<meta http-equiv="Content-Security-Policy"[^>]+>/g, '');
     await page.setContent(html);
-    for (const name of ['domain.js', 'host.js', 'transfer.js', 'vendor/qr-encode.js', 'vendor/qr-decode.js', 'vendor/code128-patterns.js', 'codes.js', 'reports.js', 'scanner.js']) {
+    for (const name of ['domain.js', 'transport.js', 'host.js', 'transfer.js', 'vendor/qr-encode.js', 'vendor/qr-decode.js', 'vendor/code128-patterns.js', 'codes.js', 'reports.js', 'scanner.js']) {
       await page.addScriptTag({ content: source(name) });
     }
     await page.evaluate(() => {
@@ -67,8 +67,8 @@ init();
     const created = await page.evaluate(() => ({ name: __portable.name, value: JSON.parse(__portable.createdText) }));
     assert.match(created.name, /^YARUS-.*\.yarus\.json$/);
     assert.equal(created.value.format, 'yarus-data');
-    assert.equal(created.value.version, 1);
-    assert.equal(created.value.portable.appVersion, '1.1.2');
+    assert.equal(created.value.version, 2);
+    assert.equal(created.value.portable.appVersion, '1.2.0');
     assert.equal(created.value.me, undefined);
     assert.equal(created.value.localSeen, undefined);
 

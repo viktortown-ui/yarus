@@ -1,27 +1,16 @@
-ANDROID RUNTIME ACCEPTANCE — YARUS 1.1.2
-Date: 2026-09-21
-Environment: Android 16 emulator, package ru.viktortown.yarus.
+ANDROID RUNTIME ACCEPTANCE — YARUS 1.2.0
+Date: 2026-09-24
+Environment: Android 16 emulator, 1080x1920, package ru.viktortown.yarus.
 
-PASS: exact final signed release APK installed with adb install -r and launched.
-PASS: package reports versionCode 2026092101 and versionName 1.1.2.
-PASS: firstInstallTime remained 2026-09-19 22:29:35 after the upgrade.
-PASS: existing demo warehouse retained 12 products and its movement history.
-PASS: Settings UI reports "Версия 1.1.2"; obsolete beta version text is absent.
-PASS: camera invitation control and responsive phone/tablet layouts were exercised.
-PASS: a real SAF .yarus.json survived uninstall/reinstall and restored its product.
-APK SHA-256: 8960028d777fe5cca53a415bd9e7ba469feceba513b3ec5d3abb68487acd0eef
+PASS: signed release APK installed with adb install -r and launched.
+PASS: package reports versionCode 2026092401 and versionName 1.2.0.
+PASS: signed upgrade from installed 1.0.0 retained firstInstallTime
+      2026-09-19 22:29:35 and the existing 12-item demo warehouse.
+PASS: Settings UI reports "Версия 1.2.0" after upgrade.
+PASS: repeated installation of the final APK retained the same data.
+Final APK SHA-256: e4143d18d263050fde875306e5385cffa8ebda6be4c6e169cf117f6892fb998a
+PASS: responsive phone/tablet flows and the QR camera entry point were exercised
+      in the release Playwright tests.
 
-NOT TESTED: every vendor firmware, physical camera/printer or RuStore production review flow.
-PASS: Android app widget was bound, showed warehouse totals, and opened YARUS on tap.
-PASS: native DocumentsUI exported a full JSON backup; parsed format yarus-data/version 1,
-      12 items, 3 places, 14 events.
-PASS: native DocumentsUI exported an unencrypted one-page A4 stock PDF; pypdf and
-      Poppler rendering confirmed readable Cyrillic, table and footer without clipping.
-PASS: CAMERA runtime permission was requested and granted.
-PASS: Android Photo Picker supplied the PNG fixture; YARUS decoded EAN-13
-      4601234567893 locally after the WebView content-URI compatibility fix.
-PASS: no fatal Android/Chromium error was logged during the fixed image scan.
-
-LIMIT: the emulator virtual camera did not provide WebView with a stable video stream.
-      Live camera autofocus/exposure and printing remain physical-device acceptance items.
-LIMIT: no RuStore account submission or store moderation is claimed by this test.
+NOT TESTED IN THIS RUN: physical camera autofocus, vendor firmware, physical
+printer, two physical LAN devices or the production RuStore update flow.

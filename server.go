@@ -36,8 +36,11 @@ import (
 //go:embed web/*
 var assets embed.FS
 
-const appVersion = "1.1.2"
+const appVersion = "1.2.0"
 const maxQty int64 = 1_000_000_000_000
+const maxPrice int64 = 10_000_000_000_000
+const historySegmentSize = 5000
+const recentCommandLimit = 10000
 const backupRetention = 30
 
 const (
@@ -132,6 +135,7 @@ type Session struct {
 }
 type Seen struct {
 	Intent string `json:"intent"`
+	Seq    int64  `json:"seq,omitempty"`
 }
 type HostInfo struct {
 	Epoch      int64  `json:"epoch"`
@@ -140,36 +144,52 @@ type HostInfo struct {
 	TransferID string `json:"transferId,omitempty"`
 	UpdatedAt  string `json:"updatedAt"`
 }
+type TransferInfo struct {
+	ID              string `json:"id"`
+	TargetDevice    string `json:"targetDevice"`
+	ReceiptCode     string `json:"receiptCode,omitempty"`
+	ActivationToken string `json:"activationToken,omitempty"`
+	ActivationHash  string `json:"activationHash"`
+	StartedAt       string `json:"startedAt"`
+	ConfirmedAt     string `json:"confirmedAt,omitempty"`
+}
 type State struct {
-	Seq      int64              `json:"seq"`
-	Space    Workspace          `json:"space"`
-	Host     HostInfo           `json:"host"`
-	Items    map[string]Item    `json:"items"`
-	Places   map[string]Place   `json:"places"`
-	Stocks   map[string]Stock   `json:"stocks"`
-	Events   []Event            `json:"events"`
-	Users    map[string]User    `json:"users"`
-	Invites  map[string]Invite  `json:"invites"`
-	Sessions map[string]Session `json:"sessions"`
-	Seen     map[string]Seen    `json:"seen"`
+	Seq             int64              `json:"seq"`
+	Space           Workspace          `json:"space"`
+	Host            HostInfo           `json:"host"`
+	Items           map[string]Item    `json:"items"`
+	Places          map[string]Place   `json:"places"`
+	Stocks          map[string]Stock   `json:"stocks"`
+	HistorySegments [][]Event          `json:"historySegments,omitempty"`
+	Events          []Event            `json:"events"`
+	EventCount      int64              `json:"eventCount"`
+	Users           map[string]User    `json:"users"`
+	Invites         map[string]Invite  `json:"invites"`
+	Sessions        map[string]Session `json:"sessions"`
+	Seen            map[string]Seen    `json:"seen"`
+	TransportKey    string             `json:"transportKey,omitempty"`
+	Transfer        *TransferInfo      `json:"transfer,omitempty"`
 }
 
 // Every record is a small deterministic patch. Durable append + fsync precedes acknowledgment.
 type Patch struct {
-	Seq           int64      `json:"seq"`
-	Key           string     `json:"key,omitempty"`
-	Intent        string     `json:"intent,omitempty"`
-	Space         *Workspace `json:"space,omitempty"`
-	Item          *Item      `json:"item,omitempty"`
-	Place         *Place     `json:"place,omitempty"`
-	Stocks        []Stock    `json:"stocks,omitempty"`
-	Event         *Event     `json:"event,omitempty"`
-	User          *User      `json:"user,omitempty"`
-	Invite        *Invite    `json:"invite,omitempty"`
-	Session       *Session   `json:"session,omitempty"`
-	DeleteSession string     `json:"deleteSession,omitempty"`
-	Host          *HostInfo  `json:"host,omitempty"`
-	Full          *State     `json:"full,omitempty"`
+	Seq           int64         `json:"seq"`
+	Key           string        `json:"key,omitempty"`
+	Intent        string        `json:"intent,omitempty"`
+	Space         *Workspace    `json:"space,omitempty"`
+	Item          *Item         `json:"item,omitempty"`
+	Place         *Place        `json:"place,omitempty"`
+	Stocks        []Stock       `json:"stocks,omitempty"`
+	Event         *Event        `json:"event,omitempty"`
+	User          *User         `json:"user,omitempty"`
+	Invite        *Invite       `json:"invite,omitempty"`
+	Session       *Session      `json:"session,omitempty"`
+	DeleteSession string        `json:"deleteSession,omitempty"`
+	Host          *HostInfo     `json:"host,omitempty"`
+	Transfer      *TransferInfo `json:"transfer,omitempty"`
+	ClearTransfer bool          `json:"clearTransfer,omitempty"`
+	TransportKey  *string       `json:"transportKey,omitempty"`
+	Full          *State        `json:"full,omitempty"`
 }
 type Record struct {
 	Version    int             `json:"v,omitempty"`
@@ -195,7 +215,7 @@ type APIError struct {
 func (e *APIError) Error() string    { return e.Message }
 func bad(code int, msg string) error { return &APIError{code, msg} }
 func blankState() State {
-	return State{Items: map[string]Item{}, Places: map[string]Place{}, Stocks: map[string]Stock{}, Events: []Event{}, Users: map[string]User{}, Invites: map[string]Invite{}, Sessions: map[string]Session{}, Seen: map[string]Seen{}}
+	return State{Items: map[string]Item{}, Places: map[string]Place{}, Stocks: map[string]Stock{}, HistorySegments: [][]Event{}, Events: []Event{}, Users: map[string]User{}, Invites: map[string]Invite{}, Sessions: map[string]Session{}, Seen: map[string]Seen{}}
 }
 func hash(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
 func random(n int) string {
@@ -213,10 +233,103 @@ func activeHost(device string, epoch int64) HostInfo {
 	}
 	return HostInfo{Epoch: epoch, Status: "active", Device: device, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 }
+
+func historyCount(s *State) int64 {
+	total := len(s.Events)
+	for _, segment := range s.HistorySegments {
+		total += len(segment)
+	}
+	return int64(total)
+}
+
+func normalizeHistory(s *State) {
+	if s.HistorySegments == nil {
+		s.HistorySegments = [][]Event{}
+	}
+	if s.Events == nil {
+		s.Events = []Event{}
+	}
+	for len(s.Events) > historySegmentSize {
+		segment := append([]Event(nil), s.Events[:historySegmentSize]...)
+		s.HistorySegments = append(s.HistorySegments, segment)
+		s.Events = append([]Event(nil), s.Events[historySegmentSize:]...)
+	}
+	s.EventCount = historyCount(s)
+}
+
+func appendHistory(s *State, event Event) {
+	normalizeHistory(s)
+	if len(s.Events) >= historySegmentSize {
+		s.HistorySegments = append(s.HistorySegments, s.Events)
+		s.Events = []Event{}
+	}
+	s.Events = append(s.Events, event)
+	s.EventCount++
+}
+
+func eachHistory(s *State, visit func(*Event) bool) {
+	for i := range s.HistorySegments {
+		for j := range s.HistorySegments[i] {
+			if !visit(&s.HistorySegments[i][j]) {
+				return
+			}
+		}
+	}
+	for i := range s.Events {
+		if !visit(&s.Events[i]) {
+			return
+		}
+	}
+}
+
+func recentHistory(s *State, limit int) []Event {
+	if limit <= 0 {
+		return []Event{}
+	}
+	result := make([]Event, 0, limit)
+	for i := len(s.Events) - 1; i >= 0 && len(result) < limit; i-- {
+		result = append(result, s.Events[i])
+	}
+	for n := len(s.HistorySegments) - 1; n >= 0 && len(result) < limit; n-- {
+		for i := len(s.HistorySegments[n]) - 1; i >= 0 && len(result) < limit; i-- {
+			result = append(result, s.HistorySegments[n][i])
+		}
+	}
+	for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {
+		result[left], result[right] = result[right], result[left]
+	}
+	return result
+}
+
+func pruneSeen(s *State) {
+	if s.Seen == nil {
+		s.Seen = map[string]Seen{}
+		return
+	}
+	if len(s.Seen) <= recentCommandLimit {
+		return
+	}
+	keys := make([]string, 0, len(s.Seen))
+	for key := range s.Seen {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		left, right := s.Seen[keys[i]].Seq, s.Seen[keys[j]].Seq
+		if left == right {
+			return keys[i] < keys[j]
+		}
+		return left < right
+	})
+	for _, key := range keys[:len(keys)-recentCommandLimit] {
+		delete(s.Seen, key)
+	}
+}
+
 func apply(s *State, p Patch) {
 	if p.Full != nil {
 		*s = *p.Full
-		s.Seq = p.Seq
+		normalizeHistory(s)
+		pruneSeen(s)
 		return
 	}
 	s.Seq = p.Seq
@@ -233,7 +346,7 @@ func apply(s *State, p Patch) {
 		s.Stocks[key(x.Item, x.Place)] = x
 	}
 	if p.Event != nil {
-		s.Events = append(s.Events, *p.Event)
+		appendHistory(s, *p.Event)
 	}
 	if p.User != nil {
 		s.Users[p.User.ID] = *p.User
@@ -250,8 +363,19 @@ func apply(s *State, p Patch) {
 	if p.Host != nil {
 		s.Host = *p.Host
 	}
+	if p.Transfer != nil {
+		value := *p.Transfer
+		s.Transfer = &value
+	}
+	if p.ClearTransfer {
+		s.Transfer = nil
+	}
+	if p.TransportKey != nil {
+		s.TransportKey = *p.TransportKey
+	}
 	if p.Key != "" {
-		s.Seen[p.Key] = Seen{p.Intent}
+		s.Seen[p.Key] = Seen{Intent: p.Intent, Seq: p.Seq}
+		pruneSeen(s)
 	}
 }
 func openStore(path string) (*Store, error) {
@@ -333,8 +457,8 @@ func openStore(path string) (*Store, error) {
 			return nil, fmt.Errorf("encrypted journal migration: %w", err)
 		}
 	}
-	// Add stable QR and host metadata to legacy journals in one backed-up record.
-	if len(st.S.Users) > 0 && (st.S.Space.ID == "" || st.S.Host.Epoch == 0) {
+	// Add stable QR, host and encrypted-LAN metadata to legacy journals in one backed-up record.
+	if len(st.S.Users) > 0 && (st.S.Space.ID == "" || st.S.Host.Epoch == 0 || st.S.TransportKey == "") {
 		if _, err := st.backup(); err != nil {
 			st.file.Close()
 			return nil, fmt.Errorf("backup before metadata migration: %w", err)
@@ -348,6 +472,10 @@ func openStore(path string) (*Store, error) {
 		if st.S.Host.Epoch == 0 {
 			host := activeHost("Windows-компьютер", 1)
 			patch.Host = &host
+		}
+		if st.S.TransportKey == "" {
+			transportKey := random(32)
+			patch.TransportKey = &transportKey
 		}
 		if err := st.commit(patch); err != nil {
 			st.file.Close()
@@ -605,7 +733,13 @@ func requirePermission(u User, permission, message string) error {
 
 func prepare(s *State, u User, c Command) (Patch, error) {
 	p := Patch{}
-	if s.Host.Status == "retired" {
+	if s.Host.Status != "active" {
+		if s.Host.Status == "transfer_pending" {
+			return p, bad(423, "Перенос ещё не завершён. Завершите его или отмените, чтобы продолжить работу.")
+		}
+		if s.Host.Status == "awaiting_activation" {
+			return p, bad(423, "Сначала активируйте это новое главное устройство.")
+		}
 		return p, bad(423, "Это устройство больше не является главным. Подключитесь к новому главному устройству.")
 	}
 	if !validID(c.ID) {
@@ -627,7 +761,7 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 		x.SKU = strings.TrimSpace(x.SKU)
 		x.Barcode = strings.TrimSpace(x.Barcode)
 		x.Category = strings.TrimSpace(x.Category)
-		if !validID(x.ID) || x.Name == "" || !text(x.Name, 150) || !text(x.SKU, 80) || !text(x.Barcode, 80) || !text(x.Category, 80) || !text(x.Note, 2000) || !allowedUnit(x.Unit) || x.Min < 0 || x.Min > maxQty || x.Price < 0 || x.Price > 100_000_000 || len(x.Fields) > 12 {
+		if !validID(x.ID) || x.Name == "" || !text(x.Name, 150) || !text(x.SKU, 80) || !text(x.Barcode, 80) || !text(x.Category, 80) || !text(x.Note, 2000) || !allowedUnit(x.Unit) || x.Min < 0 || x.Min > maxQty || x.Price < 0 || x.Price > maxPrice || len(x.Fields) > 12 {
 			return p, bad(400, "Проверьте название, единицу, цену и минимум. До 12 дополнительных полей.")
 		}
 		for k, v := range x.Fields {
@@ -643,10 +777,16 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 			return p, bad(409, "Лимит этой версии — 5000 карточек на склад.")
 		}
 		if exists && x.Unit != old.Unit {
-			for _, e := range s.Events {
-				if e.Item == x.ID {
-					return p, bad(409, "Единицу товара с историей менять нельзя. Создайте другую карточку.")
+			hasHistory := false
+			eachHistory(s, func(event *Event) bool {
+				if event.Item == x.ID {
+					hasHistory = true
+					return false
 				}
+				return true
+			})
+			if hasHistory {
+				return p, bad(409, "Единицу товара с историей менять нельзя. Создайте другую карточку.")
 			}
 		}
 		for id, y := range s.Items {
@@ -742,12 +882,26 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 		e := Event{ID: c.ID, Kind: c.Type, Item: c.ItemID, From: c.From, To: c.To, Qty: c.Qty, Note: c.Note, Ref: c.Ref, Actor: u.ID, ActorName: u.Name, At: time.Now().UTC().Format(time.RFC3339Nano)}
 		if c.Type == "reverse" {
 			var found *Event
-			for i := range s.Events {
-				old := &s.Events[i]
+			eachHistory(s, func(old *Event) bool {
 				if old.ID == c.Ref {
 					found = old
 				}
 				if old.Kind == "reverse" && old.Ref == c.Ref {
+					found = nil
+					return false
+				}
+				return true
+			})
+			if found == nil {
+				alreadyReversed := false
+				eachHistory(s, func(old *Event) bool {
+					if old.Kind == "reverse" && old.Ref == c.Ref {
+						alreadyReversed = true
+						return false
+					}
+					return true
+				})
+				if alreadyReversed {
 					return p, bad(409, "Эта операция уже отменена.")
 				}
 			}
@@ -820,8 +974,11 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 }
 func snapshot(s *State, u User, all bool) map[string]any {
 	events := s.Events
-	if !all && len(events) > 1000 {
-		events = events[len(events)-1000:]
+	segments := [][]Event(nil)
+	if all {
+		segments = s.HistorySegments
+	} else {
+		events = recentHistory(s, 1000)
 	}
 	items := s.Items
 	if !allowed(u, permViewPrices) {
@@ -832,9 +989,9 @@ func snapshot(s *State, u User, all bool) map[string]any {
 		}
 	}
 	return map[string]any{
-		"format": "yarus-data", "version": 1, "seq": s.Seq, "space": s.Space,
+		"format": "yarus-data", "version": 2, "seq": s.Seq, "space": s.Space,
 		"host": s.Host, "items": items, "places": s.Places, "stocks": s.Stocks,
-		"events": events, "eventCount": len(s.Events),
+		"historySegments": segments, "events": events, "eventCount": historyCount(s),
 		"me":         map[string]any{"id": u.ID, "name": u.Name, "login": u.Login, "role": u.Role, "permissions": effectivePermissions(u)},
 		"serverTime": time.Now().UTC().Format(time.RFC3339),
 		"limits":     map[string]int{"items": 5000, "places": 200},
@@ -871,14 +1028,32 @@ func knownPermission(permission string) bool {
 }
 
 func validateImportedState(s State) error {
+	if !validTransportKey(s.TransportKey) {
+		return bad(400, "В пакете повреждён ключ безопасного подключения.")
+	}
 	if !validID(s.Space.ID) || strings.TrimSpace(s.Space.Name) == "" || !text(s.Space.Name, 80) || (s.Space.Currency != "RUB" && s.Space.Currency != "EUR" && s.Space.Currency != "USD") {
 		return bad(400, "В пакете повреждены настройки склада.")
 	}
-	if s.Host.Epoch < 1 || s.Host.Status != "active" || !text(s.Host.Device, 80) || strings.TrimSpace(s.Host.Device) == "" {
+	if s.Host.Epoch < 1 || (s.Host.Status != "active" && s.Host.Status != "awaiting_activation") || !text(s.Host.Device, 80) || strings.TrimSpace(s.Host.Device) == "" {
 		return bad(400, "В пакете повреждены сведения о главном устройстве.")
 	}
-	if s.Items == nil || s.Places == nil || s.Stocks == nil || s.Users == nil || s.Seen == nil || len(s.Items) > 5000 || len(s.Places) < 1 || len(s.Places) > 200 || len(s.Events) > 200000 || len(s.Users) < 1 || len(s.Users) > 500 || len(s.Seen) > 250000 {
+	if s.Host.Status == "awaiting_activation" && (s.Transfer == nil || s.Transfer.ID == "" || s.Transfer.ID != s.Host.TransferID || s.Transfer.ReceiptCode == "" || s.Transfer.ActivationHash == "" || s.Transfer.ActivationToken != "") {
+		return bad(400, "В пакете повреждены сведения безопасного переноса.")
+	}
+	if s.Items == nil || s.Places == nil || s.Stocks == nil || s.Users == nil || s.Seen == nil || len(s.Items) > 5000 || len(s.Places) < 1 || len(s.Places) > 200 || len(s.Users) < 1 || len(s.Users) > 500 || len(s.Seen) > recentCommandLimit {
 		return bad(400, "Пакет превышает ограничения этой версии или содержит неполные данные.")
+	}
+	if len(s.Events) > historySegmentSize {
+		return bad(400, "В пакете повреждён текущий раздел истории.")
+	}
+	for _, segment := range s.HistorySegments {
+		if len(segment) == 0 || len(segment) > historySegmentSize {
+			return bad(400, "В пакете повреждён архивный раздел истории.")
+		}
+	}
+	actualEventCount := historyCount(&s)
+	if s.EventCount != 0 && s.EventCount != actualEventCount {
+		return bad(400, "Пакет содержит неполную историю движений.")
 	}
 	for id, place := range s.Places {
 		if id != place.ID || !validID(id) || strings.TrimSpace(place.Name) == "" || !text(place.Name, 100) || !text(place.Note, 200) || place.Version < 1 {
@@ -886,7 +1061,7 @@ func validateImportedState(s State) error {
 		}
 	}
 	for id, item := range s.Items {
-		if id != item.ID || !validID(id) || strings.TrimSpace(item.Name) == "" || !text(item.Name, 150) || !text(item.SKU, 80) || !text(item.Barcode, 80) || !text(item.Category, 80) || !text(item.Note, 2000) || !allowedUnit(item.Unit) || item.Min < 0 || item.Min > maxQty || item.Price < 0 || item.Price > 100_000_000 || item.Version < 1 || len(item.Fields) > 12 {
+		if id != item.ID || !validID(id) || strings.TrimSpace(item.Name) == "" || !text(item.Name, 150) || !text(item.SKU, 80) || !text(item.Barcode, 80) || !text(item.Category, 80) || !text(item.Note, 2000) || !allowedUnit(item.Unit) || item.Min < 0 || item.Min > maxQty || item.Price < 0 || item.Price > maxPrice || item.Version < 1 || len(item.Fields) > 12 {
 			return bad(400, "В пакете повреждена карточка товара.")
 		}
 		for key, value := range item.Fields {
@@ -921,21 +1096,29 @@ func validateImportedState(s State) error {
 	}
 	computed := map[string]int64{}
 	eventIDs := map[string]bool{}
-	for _, event := range s.Events {
+	var historyError error
+	eachHistory(&s, func(event *Event) bool {
 		if !validID(event.ID) || eventIDs[event.ID] || !validID(event.Item) || s.Items[event.Item].ID == "" || len(event.Changes) < 1 || len(event.Changes) > 2 || !text(event.Note, 1000) || !text(event.ActorName, 80) {
-			return bad(400, "В пакете повреждена история движений.")
+			historyError = bad(400, "В пакете повреждена история движений.")
+			return false
 		}
 		eventIDs[event.ID] = true
 		for _, delta := range event.Changes {
 			if delta.Item != event.Item || !validID(delta.Place) || s.Places[delta.Place].ID == "" || delta.Qty < -maxQty || delta.Qty > maxQty {
-				return bad(400, "В пакете повреждено изменение остатка.")
+				historyError = bad(400, "В пакете повреждено изменение остатка.")
+				return false
 			}
 			stockKey := key(delta.Item, delta.Place)
 			computed[stockKey] += delta.Qty
 			if computed[stockKey] < 0 || computed[stockKey] > maxQty {
-				return bad(400, "История пакета приводит к недопустимому остатку.")
+				historyError = bad(400, "История пакета приводит к недопустимому остатку.")
+				return false
 			}
 		}
+		return true
+	})
+	if historyError != nil {
+		return historyError
 	}
 	for stockKey, stock := range s.Stocks {
 		if stockKey != key(stock.Item, stock.Place) || !validID(stock.Item) || !validID(stock.Place) || s.Items[stock.Item].ID == "" || s.Places[stock.Place].ID == "" || stock.Qty != computed[stockKey] || stock.Version < 1 {
@@ -970,11 +1153,12 @@ func ownerOf(s State) (User, bool) {
 }
 
 type Server struct {
-	st       *Store
-	setup    string
-	listen   string
-	limiter  sync.Mutex
-	attempts map[string][]time.Time
+	st        *Store
+	setup     string
+	listen    string
+	limiter   sync.Mutex
+	attempts  map[string][]time.Time
+	secureIDs map[string]time.Time
 }
 
 func (a *Server) auth(r *http.Request) (User, error) {
@@ -1037,6 +1221,35 @@ func (a *Server) rate(r *http.Request) bool {
 	a.attempts[ip] = append(v, now)
 	return true
 }
+
+func (a *Server) acceptSecureID(id string) bool {
+	a.limiter.Lock()
+	defer a.limiter.Unlock()
+	if a.secureIDs == nil {
+		a.secureIDs = map[string]time.Time{}
+	}
+	now := time.Now()
+	for key, seenAt := range a.secureIDs {
+		if now.Sub(seenAt) > 10*time.Minute {
+			delete(a.secureIDs, key)
+		}
+	}
+	if _, exists := a.secureIDs[id]; exists {
+		return false
+	}
+	for len(a.secureIDs) >= 20000 {
+		var oldestID string
+		var oldestTime time.Time
+		for candidate, seenAt := range a.secureIDs {
+			if oldestID == "" || seenAt.Before(oldestTime) {
+				oldestID, oldestTime = candidate, seenAt
+			}
+		}
+		delete(a.secureIDs, oldestID)
+	}
+	a.secureIDs[id] = now
+	return true
+}
 func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -1062,6 +1275,14 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"version": appVersion, "ready": ready, "name": "ЯРУС", "host": host})
 		return
 	}
+	if r.URL.Path == "/api/secure" && r.Method == "POST" {
+		a.secureRequest(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/") && !requestIsLoopback(r) && r.TLS == nil && r.Header.Get("X-Yarus-Secure") != "1" {
+		fail(w, bad(426, "Для HTTP нужен код безопасного подключения из нового QR-приглашения."))
+		return
+	}
 	if r.URL.Path == "/api/transfer/import" && r.Method == "POST" {
 		if !requestIsLoopback(r) {
 			fail(w, bad(403, "Перенос на новый компьютер запускается только на самом новом компьютере."))
@@ -1071,13 +1292,13 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Setup    string       `json:"setup"`
 			Transfer HostTransfer `json:"transfer"`
 		}
-		if e := readJSONLimit(w, r, &input, 32<<20); e != nil {
+		if e := readJSONLimit(w, r, &input, 512<<20); e != nil {
 			fail(w, e)
 			return
 		}
 		a.st.mu.Lock()
 		defer a.st.mu.Unlock()
-		if len(a.st.S.Users) > 0 || a.st.S.Seq > 0 {
+		if (len(a.st.S.Users) > 0 || a.st.S.Seq > 0) && a.st.S.Host.Status != "awaiting_activation" {
 			fail(w, bad(409, "Этот компьютер уже содержит склад. Для безопасного переноса используйте новую пустую папку ЯРУС."))
 			return
 		}
@@ -1085,16 +1306,39 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fail(w, bad(403, "Откройте перенос из окна ЯРУС на новом компьютере."))
 			return
 		}
-		if input.Transfer.Format != "yarus-host-state" || input.Transfer.Version != 1 {
+		if input.Transfer.Format != "yarus-host-state" || (input.Transfer.Version != 1 && input.Transfer.Version != 2) {
 			fail(w, bad(400, "Это не пакет главного устройства ЯРУС."))
 			return
 		}
 		imported := input.Transfer.State
+		if !validTransportKey(imported.TransportKey) {
+			imported.TransportKey = random(32)
+		}
+		if input.Transfer.Version == 1 {
+			// Старые пакеты уже считались завершённым переносом. Оставляем их
+			// импортируемыми, чтобы пользователь не потерял ранее созданный файл.
+			if imported.Host.Status != "active" {
+				fail(w, bad(400, "Старый пакет переноса содержит неверный статус устройства."))
+				return
+			}
+			imported.Transfer = nil
+			normalizeHistory(&imported)
+		} else {
+			if imported.Host.Status != "awaiting_activation" {
+				fail(w, bad(400, "Новый пакет переноса должен быть подтверждён на старом устройстве."))
+				return
+			}
+			if imported.EventCount != historyCount(&imported) {
+				fail(w, bad(400, "Новый пакет переноса содержит неполную историю."))
+				return
+			}
+		}
 		imported.Invites = map[string]Invite{}
 		imported.Sessions = map[string]Session{}
 		if imported.Seen == nil {
 			imported.Seen = map[string]Seen{}
 		}
+		pruneSeen(&imported)
 		if e := validateImportedState(imported); e != nil {
 			fail(w, e)
 			return
@@ -1106,12 +1350,15 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		token, session := sessionFor(owner)
 		imported.Sessions[session.Hash] = session
-		imported.Seq = 0
 		if e := a.st.commit(Patch{Full: &imported}); e != nil {
 			fail(w, e)
 			return
 		}
-		writeJSON(w, 200, map[string]any{"token": token, "state": snapshot(&a.st.S, owner, false)})
+		result := map[string]any{"token": token, "transportKey": imported.TransportKey, "state": snapshot(&a.st.S, owner, false)}
+		if imported.Transfer != nil {
+			result["receiptCode"] = imported.Transfer.ReceiptCode
+		}
+		writeJSON(w, 200, result)
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, "/api/") {
@@ -1126,6 +1373,10 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == "POST" && (r.URL.Path == "/api/setup" || r.URL.Path == "/api/login" || r.URL.Path == "/api/join") {
 		a.account(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/transfer/") && r.URL.Path != "/api/transfer/import" && !requestIsLoopback(r) {
+		fail(w, bad(403, "Перенос главного устройства подтверждается только на самом устройстве."))
 		return
 	}
 	if r.URL.Path == "/api/transfer/prepare" && r.Method == "POST" {
@@ -1156,30 +1407,152 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fail(w, bad(403, "Только владелец передаёт роль главного устройства."))
 			return
 		}
-		if a.st.S.Host.Status != "retired" {
-			host := a.st.S.Host
-			if host.Epoch < 1 {
-				host = activeHost("Windows-компьютер", 1)
-			}
-			host.Status = "retired"
-			host.TransferID = identifier()
-			host.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
-			if e = a.st.commit(Patch{Host: &host}); e != nil {
-				fail(w, e)
-				return
-			}
+		if a.st.S.Host.Status == "retired" {
+			fail(w, bad(409, "Роль главного устройства уже передана."))
+			return
+		}
+		if a.st.S.Host.Status == "awaiting_activation" {
+			fail(w, bad(409, "Это новое устройство ещё ожидает активации."))
+			return
 		}
 		moved, e := copyState(a.st.S)
 		if e != nil {
 			fail(w, e)
 			return
 		}
-		moved.Host = activeHost(input.Device, a.st.S.Host.Epoch+1)
-		moved.Host.TransferID = a.st.S.Host.TransferID
+		pending := a.st.S.Transfer
+		if a.st.S.Host.Status == "active" {
+			started := time.Now().UTC().Format(time.RFC3339Nano)
+			activation := random(24)
+			pending = &TransferInfo{ID: identifier(), TargetDevice: input.Device, ReceiptCode: random(15), ActivationToken: activation, ActivationHash: hash(activation), StartedAt: started}
+			host := a.st.S.Host
+			if host.Epoch < 1 {
+				host = activeHost("Windows-компьютер", 1)
+			}
+			host.Status = "transfer_pending"
+			host.TransferID = pending.ID
+			host.UpdatedAt = started
+			if e = a.st.commit(Patch{Host: &host, Transfer: pending}); e != nil {
+				fail(w, e)
+				return
+			}
+		} else if a.st.S.Host.Status != "transfer_pending" || pending == nil {
+			fail(w, bad(409, "Нельзя подготовить перенос в текущем состоянии."))
+			return
+		}
+		moved.Seq = a.st.S.Seq
+		moved.Host = activeHost(pending.TargetDevice, a.st.S.Host.Epoch+1)
+		moved.Host.Status = "awaiting_activation"
+		moved.Host.TransferID = pending.ID
+		moved.Transfer = &TransferInfo{ID: pending.ID, TargetDevice: pending.TargetDevice, ReceiptCode: pending.ReceiptCode, ActivationHash: pending.ActivationHash, StartedAt: pending.StartedAt}
 		moved.Invites = map[string]Invite{}
 		moved.Sessions = map[string]Session{}
-		transfer := HostTransfer{Format: "yarus-host-state", Version: 1, AppVersion: appVersion, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), State: moved}
+		transfer := HostTransfer{Format: "yarus-host-state", Version: 2, AppVersion: appVersion, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), State: moved}
 		writeJSON(w, 200, map[string]any{"transfer": transfer})
+		return
+	}
+	if r.URL.Path == "/api/transfer/status" && r.Method == "GET" {
+		a.st.mu.RLock()
+		defer a.st.mu.RUnlock()
+		u, e := a.auth(r)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		if !allowed(u, permHostTransfer) {
+			fail(w, bad(403, "Только владелец управляет переносом."))
+			return
+		}
+		result := map[string]any{"host": a.st.S.Host}
+		if a.st.S.Transfer != nil {
+			result["transfer"] = a.st.S.Transfer
+		}
+		writeJSON(w, 200, result)
+		return
+	}
+	if r.URL.Path == "/api/transfer/cancel" && r.Method == "POST" {
+		a.st.mu.Lock()
+		defer a.st.mu.Unlock()
+		u, e := a.auth(r)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		if !allowed(u, permHostTransfer) || a.st.S.Host.Status != "transfer_pending" || a.st.S.Transfer == nil {
+			fail(w, bad(409, "Этот перенос уже нельзя отменить."))
+			return
+		}
+		host := a.st.S.Host
+		host.Status = "active"
+		host.TransferID = ""
+		host.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		if e = a.st.commit(Patch{Host: &host, ClearTransfer: true}); e != nil {
+			fail(w, e)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "host": host})
+		return
+	}
+	if r.URL.Path == "/api/transfer/confirm" && r.Method == "POST" {
+		var input struct {
+			ReceiptCode string `json:"receiptCode"`
+		}
+		if e := readJSON(w, r, &input); e != nil {
+			fail(w, e)
+			return
+		}
+		a.st.mu.Lock()
+		defer a.st.mu.Unlock()
+		u, e := a.auth(r)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		pending := a.st.S.Transfer
+		if !allowed(u, permHostTransfer) || a.st.S.Host.Status != "transfer_pending" || pending == nil || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(input.ReceiptCode)), []byte(pending.ReceiptCode)) != 1 {
+			fail(w, bad(403, "Код подтверждения не подходит. Проверьте код на новом устройстве."))
+			return
+		}
+		host := a.st.S.Host
+		host.Status = "retired"
+		host.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		updated := *pending
+		updated.ConfirmedAt = host.UpdatedAt
+		if e = a.st.commit(Patch{Host: &host, Transfer: &updated}); e != nil {
+			fail(w, e)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"activationToken": updated.ActivationToken, "host": host})
+		return
+	}
+	if r.URL.Path == "/api/transfer/activate" && r.Method == "POST" {
+		var input struct {
+			ActivationToken string `json:"activationToken"`
+		}
+		if e := readJSON(w, r, &input); e != nil {
+			fail(w, e)
+			return
+		}
+		a.st.mu.Lock()
+		defer a.st.mu.Unlock()
+		u, e := a.auth(r)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		pending := a.st.S.Transfer
+		if !allowed(u, permHostTransfer) || a.st.S.Host.Status != "awaiting_activation" || pending == nil || subtle.ConstantTimeCompare([]byte(hash(strings.TrimSpace(input.ActivationToken))), []byte(pending.ActivationHash)) != 1 {
+			fail(w, bad(403, "Код активации не подходит. Возьмите его на старом главном устройстве."))
+			return
+		}
+		host := a.st.S.Host
+		host.Status = "active"
+		host.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		if e = a.st.commit(Patch{Host: &host, ClearTransfer: true}); e != nil {
+			fail(w, e)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "state": snapshot(&a.st.S, u, false)})
 		return
 	}
 	if r.URL.Path == "/api/command" && r.Method == "POST" {
@@ -1249,7 +1622,7 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fail(w, e)
 			return
 		}
-		writeJSON(w, 200, map[string]any{"code": code, "expires": inv.Expires})
+		writeJSON(w, 200, map[string]any{"code": code, "expires": inv.Expires, "transportKey": a.st.S.TransportKey})
 		return
 	}
 	if r.URL.Path == "/api/logout" && r.Method == "POST" {
@@ -1327,7 +1700,7 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			serialized, _ := json.Marshal(a.st.S)
 			writeJSON(w, 200, map[string]any{
 				"journalBytes": journalBytes, "packageBytes": len(serialized),
-				"items": len(a.st.S.Items), "places": len(a.st.S.Places), "events": len(a.st.S.Events),
+				"items": len(a.st.S.Items), "places": len(a.st.S.Places), "events": historyCount(&a.st.S),
 				"host": a.st.S.Host,
 			})
 			return
@@ -1404,6 +1777,8 @@ func (a *Server) account(w http.ResponseWriter, r *http.Request) {
 			p.Place = &Place{ID: "main-place", Name: "Основной склад", Version: 1}
 			host := activeHost("Windows-компьютер", 1)
 			p.Host = &host
+			transportKey := random(32)
+			p.TransportKey = &transportKey
 		} else {
 			inv, ok := a.st.S.Invites[hash(strings.TrimSpace(input.Code))]
 			if !ok || inv.Used || inv.Expires < time.Now().Unix() {
@@ -1423,7 +1798,7 @@ func (a *Server) account(w http.ResponseWriter, r *http.Request) {
 		fail(w, e)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"token": token, "state": snapshot(&a.st.S, u, false)})
+	writeJSON(w, 200, map[string]any{"token": token, "transportKey": a.st.S.TransportKey, "state": snapshot(&a.st.S, u, false)})
 }
 func addresses(listen string) []string {
 	_, port, e := net.SplitHostPort(listen)

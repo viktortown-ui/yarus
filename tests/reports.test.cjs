@@ -25,7 +25,7 @@ test('stock report summary aggregates places and skips archived items', () => {
   assert.deepEqual(rows.map(row => row.name), ['Гайка']);
   assert.equal(rows[0].quantity, '3,25 шт');
   assert.equal(rows[0].minimum, '2 шт');
-  assert.equal(rows[0].value, 1138);
+  assert.equal(rows[0].value, 1138n);
 });
 
 test('detailed report respects place and item filters', () => {
@@ -33,6 +33,15 @@ test('detailed report respects place and item filters', () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].place, 'Полка 2');
   assert.equal(rows[0].quantity, '2 шт');
+});
+
+test('very large stock values use exact integer arithmetic', () => {
+  const value = state();
+  value.items.a.price = 10_000_000_000_000;
+  value.stocks.one.qty = 1_000_000_000_000;
+  value.stocks.two.qty = 0;
+  const rows = YarusReports.rowsFor(value, { layout: 'summary' });
+  assert.equal(rows[0].value, 10_000_000_000_000_000_000_000n);
 });
 
 test('PDF encoder produces an ASCII PDF with one image page', () => {

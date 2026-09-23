@@ -28,6 +28,10 @@ import javax.crypto.spec.GCMParameterSpec;
 public final class SecureHostStore {
     private static final String ALIAS = "yarus_host_state_v1";
     private static final byte[] MAGIC = new byte[]{'Y', 'H', 'S', 'T', 1};
+    private static final long MAX_BYTES = 256L << 20;
+    private static final long MAX_BACKUP_BYTES = 512L << 20;
+    private static final int MAX_BACKUP_FILES = 14;
+    private static final int MIN_BACKUP_FILES = 2;
     private final Context context;
     private final File stateFile;
     private final File backupDir;
@@ -40,10 +44,16 @@ public final class SecureHostStore {
 
     public synchronized boolean exists() { return stateFile.isFile() && stateFile.length() > MAGIC.length + 12; }
     public synchronized long size() { return exists() ? stateFile.length() : 0L; }
+    public synchronized int backupCount() { return backupFiles().length; }
+    public synchronized long backupSize() {
+        long total = 0L;
+        for (File file : backupFiles()) total += Math.max(0L, file.length());
+        return total;
+    }
 
     public synchronized String load() throws Exception {
         if (!exists()) return "";
-        byte[] raw = readAll(stateFile, 48L << 20);
+        byte[] raw = readAll(stateFile, MAX_BYTES + MAGIC.length + 28);
         if (raw.length < MAGIC.length + 12 + 16 || !Arrays.equals(MAGIC, Arrays.copyOf(raw, MAGIC.length))) {
             throw new IllegalStateException("Файл главного склада повреждён. Не удаляйте данные приложения.");
         }
@@ -56,7 +66,8 @@ public final class SecureHostStore {
     }
 
     public synchronized void save(String json) throws Exception {
-        if (json == null || json.isEmpty() || json.length() > (32 << 20)) {
+        byte[] plain = json == null ? new byte[0] : json.getBytes(StandardCharsets.UTF_8);
+        if (plain.length == 0 || plain.length > MAX_BYTES) {
             throw new IllegalArgumentException("Недопустимый размер базы главного устройства.");
         }
         maybeDailyBackup();
@@ -64,7 +75,7 @@ public final class SecureHostStore {
         cipher.init(Cipher.ENCRYPT_MODE, key());
         cipher.updateAAD(MAGIC);
         byte[] iv = cipher.getIV();
-        byte[] encrypted = cipher.doFinal(json.getBytes(StandardCharsets.UTF_8));
+        byte[] encrypted = cipher.doFinal(plain);
         File temp = new File(stateFile.getParentFile(), ".host-state-" + System.nanoTime() + ".tmp");
         boolean done = false;
         try (FileOutputStream output = new FileOutputStream(temp)) {
@@ -105,15 +116,57 @@ public final class SecureHostStore {
         if (!exists()) return;
         String day = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new Date());
         SharedPreferences preferences = context.getSharedPreferences("yarus_secure_store", Context.MODE_PRIVATE);
-        if (day.equals(preferences.getString("backup_day", ""))) return;
+        if (day.equals(preferences.getString("backup_day", ""))) {
+            pruneBackups();
+            return;
+        }
         if (!backupDir.exists() && !backupDir.mkdirs()) throw new IllegalStateException("Не удалось создать папку внутренних копий.");
+        makeRoomForBackup(stateFile.length());
         File destination = new File(backupDir, "host-" + day + ".yarus.enc");
         copyFile(stateFile, destination);
         preferences.edit().putString("backup_day", day).apply();
+        pruneBackups();
+    }
+
+    private File[] backupFiles() {
         File[] files = backupDir.listFiles((dir, name) -> name.startsWith("host-") && name.endsWith(".yarus.enc"));
-        if (files == null || files.length <= 30) return;
+        return files == null ? new File[0] : files;
+    }
+
+    private void pruneBackups() {
+        File[] files = backupFiles();
         Arrays.sort(files, (a, b) -> a.getName().compareTo(b.getName()));
-        for (int index = 0; index < files.length - 30; index++) files[index].delete();
+        long total = 0L;
+        for (File file : files) total += Math.max(0L, file.length());
+        int remaining = files.length;
+        for (File file : files) {
+            if (remaining <= MIN_BACKUP_FILES) break;
+            if (remaining <= MAX_BACKUP_FILES && total <= MAX_BACKUP_BYTES) break;
+            long length = Math.max(0L, file.length());
+            if (file.delete()) {
+                total -= length;
+                remaining--;
+            }
+        }
+    }
+
+    private void makeRoomForBackup(long incomingBytes) {
+        File[] files = backupFiles();
+        Arrays.sort(files, (a, b) -> a.getName().compareTo(b.getName()));
+        long total = 0L;
+        for (File file : files) total += Math.max(0L, file.length());
+        int remaining = files.length;
+        for (File file : files) {
+            // Keep one older recovery point while the new atomic copy is made.
+            // After a successful copy there will again be at least two.
+            if (remaining <= 1) break;
+            if (remaining < MAX_BACKUP_FILES && total + incomingBytes <= MAX_BACKUP_BYTES) break;
+            long length = Math.max(0L, file.length());
+            if (file.delete()) {
+                total -= length;
+                remaining--;
+            }
+        }
     }
 
     private static void copyFile(File source, File destination) throws Exception {

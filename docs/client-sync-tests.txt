@@ -1,9 +1,8 @@
-PASS: second authenticated client receives first client's item and stock through real HTTP
-PASS: offline draft is saved in explicit test storage adapter, does not alter confirmed stock
-PASS: reconnecting client sees remaining 1 and a visible conflict; failed draft is retained
-PASS: a deliberately lost HTTP acknowledgement is retried exactly once without duplicate movement
-PASS: transfer is reflected consistently on both authenticated clients
-PASS: cleartext restricted to literal private IPs/localhost; fake private-looking domains rejected
-PASS: no uncaught JavaScript errors in two-client flows
+PASS: two authenticated clients shared one stock through the packaged server.
+PASS: retry after a lost acknowledgement was applied exactly once.
+PASS: journal and sessions survived a real server restart.
+PASS: non-loopback plain HTTP credentials were rejected.
+PASS: encrypted request/response round-trip hid password and token.
+PASS: tampered, stale and replayed encrypted envelopes were rejected.
 
-Real HTTP + real server journal; client persistence uses explicit in-memory adapter. No native-device validation.
+Native two-phone LAN behaviour remains a physical-device acceptance item.

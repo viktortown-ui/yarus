@@ -1,9 +1,9 @@
-PASS: standard Gradle release build completed with lintVital and resource processing.
-PASS: APK ZIP integrity and required local HTML/resources verified; no runtime CDN dependency.
-PASS: compiled manifest declares ru.viktortown.yarus, minSdk 24, targetSdk 36,
-      INTERNET and CAMERA only, plus the internal YarusWidgetProvider.
-PASS: APK Signature Scheme v2/v3 verified with the permanent RSA-4096 release key.
+PASS: Gradle release build completed with lintVital and resource processing.
+PASS: APK ZIP integrity and local packed HTML/resources verified; no runtime CDN.
+PASS: manifest declares ru.viktortown.yarus, minSdk 24 and targetSdk 36.
+PASS: permissions are INTERNET, CAMERA, ACCESS_NETWORK_STATE,
+      RECEIVE_BOOT_COMPLETED and AndroidX internal signature permission.
+PASS: APK Signature Scheme v2/v3 verified with permanent RSA-4096 release key.
 PASS: AAB JAR signature verified with the same release certificate.
-PASS: canonical packed HTML equals the asset embedded in the final APK build.
-SCOPE: this file records static/build checks. Native Android runtime acceptance is
-       recorded separately in android-runtime-tests.txt.
+PASS: canonical packed HTML equals the asset supplied to the final release build.
+SCOPE: native runtime acceptance is recorded in android-runtime-tests.txt.

@@ -3,7 +3,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '1.1.2'
+$version = '1.2.0'
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
 $outputBase = [IO.Path]::GetFullPath($OutputRoot).TrimEnd('\')
@@ -60,11 +60,16 @@ Copy-Item -LiteralPath (Join-Path $dist "android\YARUS-$version-RuStore.apk") -D
 Copy-Item -LiteralPath (Join-Path $root 'docs\ОТКРОЙТЕ-СНАЧАЛА.txt') -Destination $ready
 
 # Convenience copies beside all READY folders prevent an old Android APK or launcher
-# from being selected accidentally. Existing releases are intentionally not deleted.
+# from being selected accidentally. Used READY folders are intentionally not deleted.
+Get-ChildItem -LiteralPath $outputBase -File | Where-Object {
+    ($_.Name -match '^УСТАНОВИТЬ-НА-ТЕЛЕФОН-ЯРУС-.+\.apk$' -and $_.Name -ne "УСТАНОВИТЬ-НА-ТЕЛЕФОН-ЯРУС-$version.apk") -or
+    ($_.Name -match '^ЗАПУСТИТЬ ЯРУС .+\.exe$' -and $_.Name -ne "ЗАПУСТИТЬ ЯРУС $version.exe") -or
+    ($_.Name -match '^YARUS-.+-для-Яндекс-Диска\.zip$' -and $_.Name -ne "YARUS-$version-для-Яндекс-Диска.zip")
+} | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
 Copy-Item -LiteralPath (Join-Path $dist "android\YARUS-$version-RuStore.apk") -Destination (Join-Path $outputBase "УСТАНОВИТЬ-НА-ТЕЛЕФОН-ЯРУС-$version.apk") -Force
 Copy-Item -LiteralPath (Join-Path $dist 'YARUS-LAUNCHER.exe') -Destination (Join-Path $outputBase "ЗАПУСТИТЬ ЯРУС $version.exe") -Force
 
-foreach ($name in @('АРХИТЕКТУРА.md','ВОССТАНОВЛЕНИЕ.md','ПРОВЕРКИ.md','release-1.1.2-tests.txt','privacy-policy.html','downloads.html',"ИНСТРУКЦИЯ-$version.html","YARUS-$version-stock-report-example.pdf")) {
+foreach ($name in @('АРХИТЕКТУРА.md','ВОССТАНОВЛЕНИЕ.md','ПРОВЕРКИ.md','release-1.2.0-tests.txt','privacy-policy.html','downloads.html',"ИНСТРУКЦИЯ-$version.html","YARUS-$version-stock-report-example.pdf")) {
     Copy-Item -LiteralPath (Join-Path $root "docs\$name") -Destination $documents
 }
 

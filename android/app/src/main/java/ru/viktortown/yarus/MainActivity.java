@@ -174,6 +174,8 @@ public class MainActivity extends Activity {
     }
 
     public long hostStateSize() { return hostStore == null ? 0L : hostStore.size(); }
+    public long hostBackupSize() { return hostStore == null ? 0L : hostStore.backupSize(); }
+    public int hostBackupCount() { return hostStore == null ? 0 : hostStore.backupCount(); }
 
     public String startHostServer() {
         try { return hostServer.start(); }

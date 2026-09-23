@@ -5,7 +5,8 @@
  const ROWS_PER_PAGE=36,DETAIL_LIMIT=5000;
 
  function qty(value){return new Intl.NumberFormat('ru-RU',{maximumFractionDigits:3}).format(value/1000);}
- function money(value,currency){return new Intl.NumberFormat('ru-RU',{style:'currency',currency,maximumFractionDigits:0}).format(value/100);}
+ function money(value,currency){let cents=typeof value==='bigint'?value:BigInt(Math.round(Number(value)||0)),negative=cents<0n;if(negative)cents=-cents;const units=(cents+50n)/100n,symbol={RUB:'₽',EUR:'€',USD:'$'}[currency]||currency;return `${negative?'−':''}${new Intl.NumberFormat('ru-RU').format(units)} ${symbol}`;}
+ function stockValue(quantity,price){return (BigInt(quantity)*BigInt(price)+500n)/1000n;}
  function total(state,itemId,placeId=''){let value=0;for(const stock of Object.values(state.stocks||{}))if(stock.item===itemId&&(!placeId||stock.place===placeId))value+=stock.qty;return value;}
  function fit(ctx,value,width){let text=String(value??'');if(ctx.measureText(text).width<=width)return text;while(text.length>1&&ctx.measureText(text+'...').width>width)text=text.slice(0,-1);return text+'...';}
 
@@ -17,7 +18,7 @@
    for(const stock of Object.values(state.stocks||{})){
     const item=state.items[stock.item],place=state.places[stock.place];
     if(!item||item.archived||!place||stock.qty===0||(allowed&&!allowed.has(item.id))||(options.placeId&&stock.place!==options.placeId))continue;
-    rows.push({place:place.name,name:item.name,sku:item.sku||'',quantity:qty(stock.qty)+' '+item.unit,value:Math.round(stock.qty*item.price/1000)});
+    rows.push({place:place.name,name:item.name,sku:item.sku||'',quantity:qty(stock.qty)+' '+item.unit,value:stockValue(stock.qty,item.price)});
    }
    rows.sort((a,b)=>a.place.localeCompare(b.place,'ru')||a.name.localeCompare(b.name,'ru'));
    if(rows.length>DETAIL_LIMIT)throw new Error('В подробном отчёте больше 5000 строк. Уточните место или фильтр либо используйте CSV.');
@@ -25,7 +26,7 @@
   }
   return items.sort((a,b)=>a.name.localeCompare(b.name,'ru')).map(item=>{
    const amount=total(state,item.id,options.placeId||'');
-   return {name:item.name,sku:item.sku||'',quantity:qty(amount)+' '+item.unit,minimum:qty(item.min)+' '+item.unit,value:Math.round(amount*item.price/1000)};
+   return {name:item.name,sku:item.sku||'',quantity:qty(amount)+' '+item.unit,minimum:qty(item.min)+' '+item.unit,value:stockValue(amount,item.price)};
   });
  }
 
@@ -79,7 +80,7 @@
  }
 
  async function stockPDF(state,options={}){
-  const rows=rowsFor(state,options),pageCount=Math.max(1,Math.ceil(rows.length/ROWS_PER_PAGE)),totalValue=rows.reduce((sum,row)=>sum+(row.value||0),0),images=[];
+  const rows=rowsFor(state,options),pageCount=Math.max(1,Math.ceil(rows.length/ROWS_PER_PAGE)),totalValue=rows.reduce((sum,row)=>sum+(row.value||0n),0n),images=[];
   for(let page=0;page<pageCount;page++){images.push(drawPage(state,options,rows,page,pageCount,totalValue));options.onProgress?.(page+1,pageCount);if(page+1<pageCount)await new Promise(resolve=>setTimeout(resolve,0));}
   return pdfFromImages(images);
  }

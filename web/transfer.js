@@ -17,11 +17,11 @@
   const warehouseId=String(payload.state?.space?.id||payload.space?.id||'');if(!YarusDomain.validId(warehouseId))throw new Error('Не найден идентификатор склада.');
   const salt=random(16),iv=random(12),key=await keyFor(recoveryCode,salt,['encrypt']),plain=enc.encode(JSON.stringify(payload));
   const encrypted=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:aad(purpose,warehouseId),tagLength:128},key,plain);
-  return {format:'yarus-secure-package',version:1,appVersion:'1.1.2',purpose,warehouseId,createdAt:new Date().toISOString(),kdf:{name:'PBKDF2-HMAC-SHA256',iterations:ITERATIONS,salt:bytesToBase64(salt)},cipher:{name:'AES-256-GCM',iv:bytesToBase64(iv)},ciphertext:bytesToBase64(encrypted)};
+  return {format:'yarus-secure-package',version:1,appVersion:'1.2.0',purpose,warehouseId,createdAt:new Date().toISOString(),kdf:{name:'PBKDF2-HMAC-SHA256',iterations:ITERATIONS,salt:bytesToBase64(salt)},cipher:{name:'AES-256-GCM',iv:bytesToBase64(iv)},ciphertext:bytesToBase64(encrypted)};
  }
  async function decrypt(packageValue,recoveryCode,expectedPurpose=''){
   const value=typeof packageValue==='string'?JSON.parse(packageValue):packageValue;
-  if(!value||value.format!=='yarus-secure-package'||value.version!==1||!YarusDomain.validId(value.warehouseId)||value.kdf?.name!=='PBKDF2-HMAC-SHA256'||value.kdf?.iterations!==ITERATIONS||value.cipher?.name!=='AES-256-GCM'||typeof value.ciphertext!=='string')throw new Error('Это не защищённый пакет ЯРУС 1.1.');
+  if(!value||value.format!=='yarus-secure-package'||value.version!==1||!YarusDomain.validId(value.warehouseId)||value.kdf?.name!=='PBKDF2-HMAC-SHA256'||value.kdf?.iterations!==ITERATIONS||value.cipher?.name!=='AES-256-GCM'||typeof value.ciphertext!=='string')throw new Error('Это не поддерживаемый защищённый пакет ЯРУС.');
   if(expectedPurpose&&value.purpose!==expectedPurpose)throw new Error('Этот файл предназначен для другой операции ЯРУС.');
   try{
    const salt=base64ToBytes(value.kdf.salt),iv=base64ToBytes(value.cipher.iv);if(salt.length!==16||iv.length!==12)throw new Error();

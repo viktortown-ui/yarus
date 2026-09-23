@@ -1,9 +1,9 @@
-ЧЕК-ЛИСТ ПУБЛИКАЦИИ RUSTORE — ЯРУС 1.1.2
+ЧЕК-ЛИСТ ПУБЛИКАЦИИ RUSTORE — ЯРУС 1.2.0
 
 ПОДГОТОВЛЕНО СБОРКОЙ
 [x] package id: ru.viktortown.yarus
-[x] versionName: 1.1.2
-[x] versionCode: 2026092101
+[x] versionName: 1.2.0
+[x] versionCode: 2026092401
 [x] minSdk 24 / targetSdk 36
 [x] постоянный release-ключ сохранён вне проекта
 [x] подписанные APK и AAB, публичный PEM-сертификат

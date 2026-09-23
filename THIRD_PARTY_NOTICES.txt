@@ -1,4 +1,4 @@
-ЯРУС 1.1.2 — сторонние компоненты / Third-party notices
+ЯРУС 1.2.0 — сторонние компоненты / Third-party notices
 
 QR encoder: QRCode, Copyright (c) 2009 Kazuhiko Arase, MIT.
 Locally bundled from qrcode-terminal/vendor/QRCode. Wrapper changed for YARUS.
