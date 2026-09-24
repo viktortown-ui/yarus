@@ -16,7 +16,7 @@
 
 Официальное зеркало:
 
-**https://disk.yandex.ru/d/TqshRQGtB6R-YQ**
+**https://disk.yandex.ru/d/JJikcv1kqzcWaw**
 
 В архиве `YARUS-1.2.0-для-Яндекс-Диска.zip` находятся версии для Windows и
 Android, инструкция и контрольные суммы. На Android рекомендуется устанавливать
