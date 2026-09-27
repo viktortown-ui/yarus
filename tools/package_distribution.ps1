@@ -3,7 +3,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '1.2.0'
+$version = '1.3.1'
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
 $outputBase = [IO.Path]::GetFullPath($OutputRoot).TrimEnd('\')
@@ -69,7 +69,7 @@ Get-ChildItem -LiteralPath $outputBase -File | Where-Object {
 Copy-Item -LiteralPath (Join-Path $dist "android\YARUS-$version-RuStore.apk") -Destination (Join-Path $outputBase "УСТАНОВИТЬ-НА-ТЕЛЕФОН-ЯРУС-$version.apk") -Force
 Copy-Item -LiteralPath (Join-Path $dist 'YARUS-LAUNCHER.exe') -Destination (Join-Path $outputBase "ЗАПУСТИТЬ ЯРУС $version.exe") -Force
 
-foreach ($name in @('АРХИТЕКТУРА.md','ВОССТАНОВЛЕНИЕ.md','ПРОВЕРКИ.md','release-1.2.0-tests.txt','privacy-policy.html','downloads.html',"ИНСТРУКЦИЯ-$version.html","YARUS-$version-stock-report-example.pdf")) {
+foreach ($name in @('АРХИТЕКТУРА.md','ВОССТАНОВЛЕНИЕ.md','ПРОВЕРКИ.md',"release-$version-tests.txt",'privacy-policy.html','downloads.html',"ИНСТРУКЦИЯ-$version.html","YARUS-$version-stock-report-example.pdf")) {
     Copy-Item -LiteralPath (Join-Path $root "docs\$name") -Destination $documents
 }
 

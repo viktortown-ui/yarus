@@ -6,6 +6,10 @@ from playwright.async_api import async_playwright
 from ui_smoke import mount
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 OUT=ROOT/'docs'/'screenshots'
+async def open_manual(p):
+ details=p.locator('.scan-manual-details')
+ if not await details.get_attribute('open'):
+  await details.locator('summary').click()
 async def main():
  reports=[]
  async with async_playwright() as pw:
@@ -18,6 +22,7 @@ async def main():
   before=await p.evaluate('state.eventCount')
   stock=await p.evaluate('JSON.stringify(state.stocks)')
   await p.locator('[data-action="scan-code"]').first.click()
+  await open_manual(p)
   await p.locator('#scan-manual').fill('4601234567893')
   await p.locator('#scan-manual-form button').click()
   await p.locator('#scan-bind').click()
@@ -30,6 +35,7 @@ async def main():
   reports.append('PASS: unknown EAN bound through controls without changing stock/history')
   await p.locator('[data-action="scan-code"]').first.click()
   await p.locator('#scan-image').set_input_files(str(ROOT/'tests/fixtures/bar-EAN13-460123456789.png'))
+  await p.locator('#scan-use').click()
   await p.wait_for_selector('#scan-root',state='detached')
   assert await p.locator('#modal-root').get_by_text('Канистра 5 л',exact=True).count()==1
   reports.append('PASS: uploaded EAN image decoded offline, opens the linked item')
@@ -57,6 +63,7 @@ async def main():
   await p.evaluate("operationModal('out','demo-item-2')")
   await p.locator('#op-qty').fill('17')
   await p.locator('.scan-field-btn').first.click()
+  await open_manual(p)
   await p.locator('#scan-manual').fill(expected)
   await p.locator('#scan-manual-form button').click()
   await p.wait_for_selector('#scan-root',state='detached')
@@ -73,6 +80,7 @@ async def main():
   reports.append('PASS: operation scan preserves typed quantity; insufficient stock shows immediate explanation and blocks commit')
   await p.locator('[data-action="close-modal"]').first.click()
   await p.locator('[data-action="scan-code"]').first.click()
+  await open_manual(p)
   await p.locator('#scan-manual').fill('YARUS:1:foreign-space:item:demo-item-2')
   await p.locator('#scan-manual-form button').click()
   assert 'друг' in (await p.locator('#scan-status').text_content()).lower()
@@ -86,7 +94,6 @@ async def main():
   await p.evaluate("""Object.defineProperty(window,'isSecureContext',{configurable:true,value:true});
   Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:async()=>{const e=new Error('permission test');e.name='NotAllowedError';throw e;}}});""")
   await p.locator('[data-action="scan-code"]').first.click()
-  await p.locator('#scan-start').click()
   await p.wait_for_function("document.querySelector('#scan-status').textContent.includes('не разрешён')")
   assert await p.locator('#scan-start').is_enabled()
   reports.append('PASS: simulated permission refusal gives an explanation and manual/image alternatives')
@@ -99,6 +106,7 @@ async def main():
    reports.append(f'PASS: scanner layout {width}x{height}, dark theme, no horizontal page overflow')
   await p.locator('#scan-close').click()
   await p.evaluate("openScanner('lookup')")
+  await open_manual(p)
   placeQR=await p.evaluate("YarusCodes.internal(state.space.id,'place','workshop-place')")
   await p.locator('#scan-manual').fill(placeQR)
   await p.locator('#scan-manual-form button').click()
@@ -107,6 +115,7 @@ async def main():
   assert await p.evaluate('state.eventCount')==before
   reports.append('PASS: place QR applies location filter without inventory movement')
   await p.evaluate("state.me.role='viewer';openScanner('lookup')")
+  await open_manual(p)
   await p.locator('#scan-manual').fill('UNLINKED-123')
   await p.locator('#scan-manual-form button').click()
   assert await p.locator('#scan-create').count()==0 and await p.locator('#scan-bind').count()==0

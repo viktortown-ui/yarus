@@ -23,6 +23,11 @@ public class Bridge {
         activity.completeHostResponse(id, status, body);
     }
     @JavascriptInterface public void requestReview() { activity.runOnUiThread(activity::requestStoreReview); }
+    @JavascriptInterface public boolean nativeScannerAvailable() { return true; }
+    @JavascriptInterface public String systemInsets() { return activity.systemInsets(); }
+    @JavascriptInterface public void scanCode(String target) {
+        activity.runOnUiThread(() -> activity.launchNativeScanner(target));
+    }
     @JavascriptInterface public boolean openExternal(String value) { return activity.openExternal(value); }
     @JavascriptInterface public void createPortable(String name, String text) {
         activity.runOnUiThread(() -> activity.beginPortableCreate(name, text));

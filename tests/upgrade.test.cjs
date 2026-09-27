@@ -18,19 +18,20 @@ test('1.1.2 universal yarus.json stays compatible with the current backup reader
  assert.equal(restored.space.id,source.space.id);assert.equal(D.total(restored,'legacy-canister'),17000);
  assert.equal(restored.portable,undefined,'portable transport metadata must not enter working state');
 });
-test('current user interface exposes the 1.2.0 application version',()=>{
+test('current user interface exposes the 1.3.1 application version',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
- assert.match(source,/const APP_VERSION='1\.2\.0'/);
+ assert.match(source,/const APP_VERSION='1\.3\.1'/);
+ assert.doesNotMatch(source,/const APP_VERSION='1\.3\.0'/);
+ assert.doesNotMatch(source,/const APP_VERSION='1\.2\.0'/);
  assert.doesNotMatch(source,/const APP_VERSION='1\.1\.2'/);
  assert.doesNotMatch(source,/Версия 0\.10\.0 beta/);
 });
 test('settings expose stable official download pages without embedding a warehouse file',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
- assert.match(source,/https:\/\/github\.com\/viktortown-ui\/yarus\/releases\/latest/);
- assert.match(source,/viktortown-ui\.github\.io\/yarus\/downloads\.html#yandex/);
+ assert.match(source,/https:\/\/viktortown-ui\.github\.io\/yarus\//);
  assert.match(source,/www\.rustore\.ru\/catalog\/app\/ru\.viktortown\.yarus/);
  assert.match(source,/data-action="download-github"/);
- assert.match(source,/data-action="download-yandex"/);
+ assert.doesNotMatch(source,/data-action="download-yandex"/);
  assert.match(source,/data-action="download-rustore"/);
  assert.match(source,/const nativeAndroid=!!window\.AndroidFiles/);
 });

@@ -1,4 +1,4 @@
-ЯРУС 1.2.0 — сторонние компоненты / Third-party notices
+ЯРУС 1.3.1 — сторонние компоненты / Third-party notices
 
 QR encoder: QRCode, Copyright (c) 2009 Kazuhiko Arase, MIT.
 Locally bundled from qrcode-terminal/vendor/QRCode. Wrapper changed for YARUS.
@@ -287,6 +287,17 @@ Android only: Kotlin standard library 1.8.22, Apache License 2.0.
 Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
 The Apache License 2.0 text already included above applies to this component.
 https://github.com/JetBrains/kotlin
+
+Android only: AndroidX Activity 1.13.0 and CameraX 1.6.2 modules.
+Copyright The Android Open Source Project. Apache License 2.0; CameraX also
+contains portions under the BSD 3-Clause license. The Apache License 2.0 text
+already included above applies. Source and release information:
+https://developer.android.com/jetpack/androidx/releases/activity
+https://developer.android.com/jetpack/androidx/releases/camera
+
+Android only: Google ML Kit Barcode Scanning 17.3.0 and bundled runtime modules.
+Used under the ML Kit Terms of Service:
+https://developers.google.com/ml-kit/terms
 
 Code128 standard patterns: generated from ReportLab data table.
 ReportLab is used for test fixture generation, not shipped as a runtime.

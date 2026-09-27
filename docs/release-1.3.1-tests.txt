@@ -1,0 +1,20 @@
+YARUS 1.3.1 RELEASE TEST SUMMARY — 2026-09-27
+
+PASS: 52/52 Node logic tests and all Go server/launcher tests.
+PASS: checksum validation and three matching frames for the native scanner.
+PASS: phone/tablet/desktop responsive UI, full-screen shelf and item routes.
+PASS: Android top/bottom insets keep content clear of status and gesture bars.
+PASS: native CameraX scanner opens on Android 16 emulator; tap focus succeeds.
+PASS: bundled ML Kit barcode module loads locally; no crash in the camera flow.
+PASS: EAN image confirmation, native bridge, manual scanner and QR workflows.
+PASS: closing native camera returns directly; unsaved dialog is titled "ЯРУС".
+PASS: two-device safe transfer, encrypted LAN, exact retry and restart persistence.
+PASS: Windows shared UI and migration path from 1.3.0 are covered by tests.
+
+PASS: signed 1.3.1 APK/AAB and Windows x64 ZIP were built with hash files.
+PASS: the packaged Windows server started and /api/info reported version 1.3.1.
+APK SHA-256: 69a4d96322f6d80d1b2318e5fedd0affd5322f88f07240eaf9853784755c4ae2
+AAB SHA-256: 9ee35032441efe708dac965b69c26abe1cc264538afe3a07bae9aca7d2ec261f
+Windows ZIP SHA-256: c6384a53e564be72b1744f232119b911cc4be6dc0eeac73d89c22070374c0395
+NOT LIVE-VERIFIED: physical Samsung autofocus, physical printer/two-device LAN,
+or a published RuStore 1.3.1 update. Publication is a separate owner action.

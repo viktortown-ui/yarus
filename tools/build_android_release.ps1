@@ -27,6 +27,8 @@ foreach ($name in 'storePassword','keyAlias','keyPassword') {
 
 & python (Join-Path $root 'tools\pack_web.py')
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось упаковать web-интерфейс.' }
+& (Join-Path $root 'tools\test_android_scanner.ps1') -JavaHome $jbr
+if ($LASTEXITCODE -ne 0) { throw 'Не пройдена проверка Android-сканера.' }
 
 $env:JAVA_HOME = $jbr
 $env:YARUS_KEYSTORE_FILE = $keystorePath
@@ -48,8 +50,8 @@ try {
 
 $output = Join-Path $root 'dist\android'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-$apk = Join-Path $output 'YARUS-1.2.0-RuStore.apk'
-$aab = Join-Path $output 'YARUS-1.2.0-RuStore.aab'
+$apk = Join-Path $output 'YARUS-1.3.1-RuStore.apk'
+$aab = Join-Path $output 'YARUS-1.3.1-RuStore.aab'
 $certificate = Join-Path $output 'YARUS-upload-certificate.pem'
 # Do not leave an obsolete installable beside the current release: it is too
 # easy to send the wrong APK from Explorer. Only generated release artifacts

@@ -26,6 +26,7 @@ import org.json.JSONObject;
  * No remote website is loaded into the bridge-enabled WebView.
  */
 public class MainActivity extends Activity {
+    private static final int REQUEST_NATIVE_SCANNER = 1004;
     public WebView web;
     public android.webkit.PermissionRequest cameraRequest;
     public String pendingText;
@@ -34,6 +35,10 @@ public class MainActivity extends Activity {
     public MobileHostServer hostServer;
     public PortableWarehouseFile portableFile;
     public String pendingPortableText;
+    private int safeTopDp;
+    private int safeRightDp;
+    private int safeBottomDp;
+    private int safeLeftDp;
     private final ConcurrentHashMap<String, CompletableFuture<HostResponse>> hostResponses = new ConcurrentHashMap<>();
     private final AtomicLong hostRequestCounter = new AtomicLong();
 
@@ -91,21 +96,51 @@ public class MainActivity extends Activity {
 
     private void applySystemInsets() {
         web.setOnApplyWindowInsetsListener((view, insets) -> {
+            int left;
+            int top;
+            int right;
+            int bottom;
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets bars = insets.getInsets(
-                        WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                        WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars()
+                                | WindowInsets.Type.displayCutout());
+                left = bars.left; top = bars.top; right = bars.right; bottom = bars.bottom;
             } else {
-                view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
-                        insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+                left = insets.getSystemWindowInsetLeft(); top = insets.getSystemWindowInsetTop();
+                right = insets.getSystemWindowInsetRight(); bottom = insets.getSystemWindowInsetBottom();
             }
+            // Fixed and sticky web elements ignore WebView padding on some vendor builds.
+            // Publish every inset to CSS so headers, dialogs and navigation move together.
+            view.setPadding(0, 0, 0, 0);
+            float density = getResources().getDisplayMetrics().density;
+            safeTopDp = Math.max(0, Math.round(top / density));
+            safeRightDp = Math.max(0, Math.round(right / density));
+            safeBottomDp = Math.max(0, Math.round(bottom / density));
+            safeLeftDp = Math.max(0, Math.round(left / density));
+            publishSystemInsets();
             return insets;
         });
+        web.requestApplyInsets();
+    }
+
+    public String systemInsets() {
+        try {
+            return new JSONObject().put("top", safeTopDp).put("right", safeRightDp)
+                    .put("bottom", safeBottomDp).put("left", safeLeftDp).toString();
+        } catch (Exception ignored) {
+            return "{\"top\":0,\"right\":0,\"bottom\":0,\"left\":0}";
+        }
+    }
+
+    private void publishSystemInsets() {
+        if (web == null) return;
+        web.evaluateJavascript("(function(s){for(const k in s)document.documentElement.style.setProperty('--native-safe-'+k,s[k]+'px');})(" +
+                systemInsets() + ");", null);
     }
 
     private void handleBack() {
         if (web == null) { finish(); return; }
-        web.evaluateJavascript("if(typeof yarusScanSession!=='undefined'&&yarusScanSession){closeScanner();}else if(document.querySelector('#modal-root .modal')){closeModal();}else if(typeof page==='string'&&page!=='home'&&state){page='home';render();}else{AndroidFiles.closeApp();}", null);
+        web.evaluateJavascript("if(typeof yarusScanSession!=='undefined'&&yarusScanSession){closeScanner();}else if(document.querySelector('#modal-root .modal')){closeModal();}else if(typeof page==='string'&&page==='shelf'&&typeof shelfSelected==='string'&&shelfSelected){shelfSelected='';render();}else if(typeof page==='string'&&page!=='home'&&state){page='home';render();}else{AndroidFiles.closeApp();}", null);
     }
 
     @SuppressLint("GestureBackNavigation") // API 33+ is handled by OnBackInvokedDispatcher above.
@@ -234,6 +269,32 @@ public class MainActivity extends Activity {
         ReviewPrompter.launch(this);
     }
 
+    public void launchNativeScanner(String target) {
+        try {
+            Intent intent = new Intent(this, ScannerActivity.class);
+            intent.putExtra("target", target == null ? "lookup" : target);
+            startActivityForResult(intent, REQUEST_NATIVE_SCANNER);
+        } catch (Exception error) {
+            nativeScannerCallback("failed", "", "", "Не удалось открыть камеру телефона.");
+        }
+    }
+
+    private void nativeScannerCallback(String method, String value, String format, String message) {
+        if (web == null) return;
+        String script;
+        if ("deliver".equals(method)) {
+            script = "if(window.YarusNativeScanner)YarusNativeScanner.deliver(" +
+                    JSONObject.quote(value == null ? "" : value) + "," +
+                    JSONObject.quote(format == null ? "" : format) + ");";
+        } else if ("failed".equals(method)) {
+            script = "if(window.YarusNativeScanner)YarusNativeScanner.failed(" +
+                    JSONObject.quote(message == null ? "" : message) + ");";
+        } else {
+            script = "if(window.YarusNativeScanner)YarusNativeScanner.cancelled();";
+        }
+        web.evaluateJavascript(script, null);
+    }
+
     public void beginPortableCreate(String name, String text) {
         pendingPortableText = text;
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -266,6 +327,17 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_NATIVE_SCANNER) {
+            if (resultCode == RESULT_OK && data != null) {
+                nativeScannerCallback("deliver", data.getStringExtra(ScannerActivity.EXTRA_VALUE),
+                        data.getStringExtra(ScannerActivity.EXTRA_FORMAT), "");
+            } else {
+                String error = data == null ? "" : data.getStringExtra(ScannerActivity.EXTRA_ERROR);
+                if (error != null && !error.isEmpty()) nativeScannerCallback("failed", "", "", error);
+                else nativeScannerCallback("cancelled", "", "", "");
+            }
+            return;
+        }
         if (requestCode == 1002) {
             if (fileCallback != null) {
                 fileCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));

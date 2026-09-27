@@ -11,6 +11,8 @@ function resolve(s,value){const p=parse(value);if(p.kind!=='external'){if(!s.spa
 function matrix(payload){const s=clean(payload);if(!/^[\x20-\x7e]+$/.test(s))throw new Error('Для этикетки нужен внутренний код ЯРУС.');const qr=new root.YarusQREncoder(-1,0);qr.addData(s);qr.make();return qr.modules;}
 function svg(payload){const a=matrix(payload),n=a.length+8;let d='';a.forEach((row,y)=>row.forEach((v,x)=>{if(v)d+=`M${x+4},${y+4}h1v1h-1z`;}));return `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges"><rect width="${n}" height="${n}" fill="white"/><path d="${d}" fill="black"/></svg>`;}
 function eanCheck(s){if(!/^\d{8}$|^\d{13}$/.test(s))return false;let sum=0;for(let i=s.length-2,j=0;i>=0;i--,j++)sum+=Number(s[i])*(j%2?1:3);return (10-sum%10)%10===+s[s.length-1];}
+function scanFormat(value){const key=String(value||'').trim().toLowerCase().replace(/[\s-]+/g,'_');return ({qr:'QR',qr_code:'QR',ean13:'EAN-13',ean_13:'EAN-13',ean8:'EAN-8',ean_8:'EAN-8',code128:'Code 128',code_128:'Code 128'})[key]||String(value||'').trim();}
+function validateScan(value,format=''){const text=clean(value),kind=scanFormat(format);if(kind==='EAN-13'&&(!/^\d{13}$/.test(text)||!eanCheck(text)))throw new Error('Штрихкод прочитан нечётко. Отведите камеру чуть дальше, наведите резкость и повторите.');if(kind==='EAN-8'&&(!/^\d{8}$/.test(text)||!eanCheck(text)))throw new Error('Штрихкод прочитан нечётко. Отведите камеру чуть дальше, наведите резкость и повторите.');return {text,format:kind};}
 const L=['0001101','0011001','0010011','0111101','0100011','0110001','0101111','0111011','0110111','0001011'];
 const G=['0100111','0110011','0011011','0100001','0011101','0111001','0000101','0010001','0001001','0010111'];
 const R=L.map(s=>[...s].map(c=>c==='0'?'1':'0').join(''));
@@ -26,5 +28,5 @@ function lineDecode(gray){let lo=255,hi=0;for(const v of gray){lo=Math.min(lo,v)
  }return null;}
 function decode1D(image){const {data,width:w,height:h}=image;const results=new Map();for(const vertical of [false,true]){const len=vertical?h:w,other=vertical?w:h;for(const fraction of [.5,.4,.6,.3,.7]){const index=Math.floor(other*fraction),gray=new Uint8Array(len);for(let i=0;i<len;i++){const k=4*(vertical?i*w+index:index*w+i);gray[i]=(77*data[k]+150*data[k+1]+29*data[k+2])>>8;}for(const row of [gray,Uint8Array.from(gray).reverse()]){const r=lineDecode(row);if(r){const key=r.format+':'+r.text,count=(results.get(key)||0)+1;results.set(key,count);if(count>=2)return r;}}}}return null;}
 function decode(image){const qr=root.YarusQRDecode(image.data,image.width,image.height);if(qr?.data)return {text:qr.data,format:'QR'};return decode1D(image);}
-root.YarusCodes={clean,internal,parse,invite,parseInvite,resolve,matrix,svg,eanCheck,decode,decode1D,lineDecode,eanBits};
+root.YarusCodes={clean,internal,parse,invite,parseInvite,resolve,matrix,svg,eanCheck,scanFormat,validateScan,decode,decode1D,lineDecode,eanBits};
 })(globalThis);

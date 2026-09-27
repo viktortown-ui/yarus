@@ -36,7 +36,7 @@ import (
 //go:embed web/*
 var assets embed.FS
 
-const appVersion = "1.2.0"
+const appVersion = "1.3.1"
 const maxQty int64 = 1_000_000_000_000
 const maxPrice int64 = 10_000_000_000_000
 const historySegmentSize = 5000
