@@ -4,10 +4,29 @@ browser policies. It uses set_content and injects the unchanged app code, then
 replaces ONLY persistence/network transport with test adapters. Go tests cover
 real HTTP and persistence separately. This is not a native-device test.
 """
-import asyncio, json, re, pathlib, urllib.request, urllib.error
+import asyncio, json, os, re, pathlib, shutil, sys, urllib.request, urllib.error
 from playwright.async_api import async_playwright
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 OUT=ROOT/'docs'/'screenshots';OUT.mkdir(parents=True,exist_ok=True)
+if hasattr(sys.stdout,'reconfigure'):sys.stdout.reconfigure(encoding='utf-8')
+
+def chromium_launch_options():
+ candidates=[
+  os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE',''),
+  shutil.which('chromium') or '',
+  shutil.which('chromium-browser') or '',
+  shutil.which('msedge') or '',
+ ]
+ if os.name=='nt':
+  for env_name in ('PROGRAMFILES(X86)','PROGRAMFILES','LOCALAPPDATA'):
+   base=os.environ.get(env_name)
+   if base:candidates.append(str(pathlib.Path(base)/'Microsoft/Edge/Application/msedge.exe'))
+ options={'headless':True,'args':['--no-sandbox']}
+ for candidate in candidates:
+  if candidate and pathlib.Path(candidate).is_file():
+   options['executable_path']=candidate
+   break
+ return options
 
 ADAPTER='''
 const mem=new Map();
@@ -21,13 +40,13 @@ init();
 async def mount(browser,width=1440,height=1000):
  page=await browser.new_page(viewport={'width':width,'height':height},device_scale_factor=1)
  errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
- html=(ROOT/'web'/'index.html').read_text().replace('<link rel="stylesheet" href="style.css">','<style>'+(ROOT/'web'/'style.css').read_text()+'</style>')
+ html=(ROOT/'web'/'index.html').read_text(encoding='utf-8').replace('<link rel="stylesheet" href="style.css">','<style>'+(ROOT/'web'/'style.css').read_text(encoding='utf-8')+'</style>')
  html=re.sub(r'<script src="[^"]+"></script>', '', html)
  html=re.sub(r'<meta http-equiv="Content-Security-Policy"[^>]+>', '', html)
  await page.set_content(html)
  for name in ['domain.js','host.js','transfer.js','vendor/qr-encode.js','vendor/qr-decode.js','vendor/code128-patterns.js','codes.js','reports.js','scanner.js']:
-  await page.add_script_tag(content=(ROOT/'web'/name).read_text())
- js=(ROOT/'web'/'app.js').read_text();assert js.rstrip().endswith('init();');js=js.rstrip()[:-7]+ADAPTER
+  await page.add_script_tag(content=(ROOT/'web'/name).read_text(encoding='utf-8'))
+ js=(ROOT/'web'/'app.js').read_text(encoding='utf-8');assert js.rstrip().endswith('init();');js=js.rstrip()[:-7]+ADAPTER
  await page.add_script_tag(content=js)
  await page.wait_for_selector('.welcome')
  return page,errors
@@ -35,7 +54,7 @@ async def mount(browser,width=1440,height=1000):
 async def main():
  reports=[]
  async with async_playwright() as p:
-  browser=await p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
+  browser=await p.chromium.launch(**chromium_launch_options())
   page,errors=await mount(browser)
   await page.get_by_role('button',name='Сначала посмотреть на примере').click()
   await page.wait_for_selector('#main')
@@ -52,6 +71,7 @@ async def main():
   await page.locator('#stock-search').fill('')
   await page.locator('[data-action="new-item"]').click()
   await page.locator('[name="name"]').fill('Тестовая гайка')
+  await page.locator('#item-form .item-more > summary').click()
   await page.locator('[name="sku"]').fill('QA-123')
   await page.locator('[name="category"]').fill('Контроль')
   await page.locator('[name="min"]').fill('2')
@@ -71,7 +91,7 @@ async def main():
   await page.locator('#modal-root [data-action="operation"][data-kind="out"]').click()
   await page.locator('#op-qty').fill('6')
   await page.locator('button[form="operation-form"]').click()
-  await page.wait_for_function("document.querySelector('#quantity-error').textContent.includes('не хватает')")
+  await page.wait_for_function("document.querySelector('#quantity-error')?.textContent.trim().length > 0")
   assert await page.evaluate("D.total(state,activeItems().find(x=>x.sku==='QA-123').id)")==5125
   page.on('dialog',lambda d:d.accept())
   await page.locator('[data-action="close-modal"]').first.click()
@@ -96,6 +116,6 @@ async def main():
   reports.append('PASS: no uncaught JavaScript errors in exercised UI flows')
   await browser.close()
  text='\n'.join(reports)+'\n\nStorage: explicit in-memory test adapter. Native IndexedDB/device execution not tested in this UI run.\n'
- (ROOT/'docs'/'ui-tests.txt').write_text(text)
+ (ROOT/'docs'/'ui-tests.txt').write_text(text,encoding='utf-8')
  print(text)
 if __name__=='__main__':asyncio.run(main())

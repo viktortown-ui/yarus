@@ -18,9 +18,10 @@ test('1.1.2 universal yarus.json stays compatible with the current backup reader
  assert.equal(restored.space.id,source.space.id);assert.equal(D.total(restored,'legacy-canister'),17000);
  assert.equal(restored.portable,undefined,'portable transport metadata must not enter working state');
 });
-test('current user interface exposes the 1.3.1 application version',()=>{
+test('current user interface exposes the 1.3.2 application version',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../web/app.js'),'utf8');
- assert.match(source,/const APP_VERSION='1\.3\.1'/);
+ assert.match(source,/const APP_VERSION='1\.3\.2'/);
+ assert.doesNotMatch(source,/const APP_VERSION='1\.3\.1'/);
  assert.doesNotMatch(source,/const APP_VERSION='1\.3\.0'/);
  assert.doesNotMatch(source,/const APP_VERSION='1\.2\.0'/);
  assert.doesNotMatch(source,/const APP_VERSION='1\.1\.2'/);

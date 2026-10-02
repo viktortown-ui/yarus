@@ -2,8 +2,8 @@ PASS: Windows x64 GUI/server/launcher built with current shared UI and icons.
 PASS: YARUS.exe has 7 icon sizes and an asInvoker manifest.
 PASS: packaged server handled two authenticated users and exact-once retry.
 PASS: journal and sessions survived a real packaged-server restart.
-PASS: the final packaged server started and /api/info reported 1.3.1.
-PASS: launcher migration 1.3.0 -> 1.3.1 copies journal, DPAPI key and WebView2
+PASS: the final packaged server started and /api/info reported 1.3.2.
+PASS: launcher migration 1.3.1 -> 1.3.2 copies journal, DPAPI key and WebView2
       profile once; source data stays unchanged and stale lock/URL are omitted.
-Windows ZIP SHA-256: aa0ebddb438468943b067b6c666e67a45a589a50a7cf0918de0ad8cab89455ff
+Windows ZIP SHA-256: d13d9eb80e0e96d3d0103c7d509920648baff03cb33ef96c0bb70bc3134b6b4f
 NOT TESTED: physical webcam/printer, Authenticode reputation or every WebView2 build.

@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
-$version = '1.3.1'
+$version = '1.3.2'
 $folder = Join-Path $dist "windows\YARUS-$version-Windows-x64"
 $zip = Join-Path $dist "windows\YARUS-$version-Windows-x64.zip"
 $output = Join-Path $dist 'windows'

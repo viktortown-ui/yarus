@@ -110,7 +110,7 @@ func migratePreviousData(root, targetDirectory string) (string, error) {
 		return "", nil
 	}
 	var oldData, oldInstall, sourceVersion string
-	for _, version := range []string{"1.3.0", "1.2.0", "1.1.2", "1.1.1"} {
+	for _, version := range []string{"1.3.1", "1.3.0", "1.2.0", "1.1.2", "1.1.1"} {
 		oldRelative := filepath.Join("YARUS-"+version+"-READY", "01-Windows", "YARUS-"+version+"-Windows-x64", "data")
 		for _, base := range []string{filepath.Dir(root), root} {
 			candidate := filepath.Join(base, oldRelative)
@@ -183,10 +183,10 @@ func main() {
 		return
 	}
 	root := filepath.Dir(executable)
-	relative := filepath.Join("01-Windows", "YARUS-1.3.1-Windows-x64", "YARUS.exe")
+	relative := filepath.Join("01-Windows", "YARUS-1.3.2-Windows-x64", "YARUS.exe")
 	candidates := []string{
 		filepath.Join(root, relative),
-		filepath.Join(root, "YARUS-1.3.1-READY", relative),
+		filepath.Join(root, "YARUS-1.3.2-READY", relative),
 	}
 	for _, target := range candidates {
 		if info, statErr := os.Stat(target); statErr == nil && !info.IsDir() {
@@ -196,7 +196,7 @@ func main() {
 				return
 			}
 			if sourceVersion != "" {
-				notice("Склад из ЯРУС " + sourceVersion + " безопасно скопирован в 1.3.1.\n\nПроверьте данные в новой версии, прежде чем удалять старую папку.")
+				notice("Склад из ЯРУС " + sourceVersion + " безопасно скопирован в 1.3.2.\n\nПроверьте данные в новой версии, прежде чем удалять старую папку.")
 			}
 			command := exec.Command(target)
 			command.Dir = filepath.Dir(target)

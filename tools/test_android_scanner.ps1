@@ -18,3 +18,13 @@ $selfTest = Join-Path $root 'android\policy-test\ru\viktortown\yarus\BarcodeScan
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось скомпилировать правила Android-сканера.' }
 & $java -ea -cp $classes ru.viktortown.yarus.BarcodeScanPolicySelfTest
 if ($LASTEXITCODE -ne 0) { throw 'Проверка правил Android-сканера не пройдена.' }
+
+$activity = Join-Path $root 'android\app\src\main\java\ru\viktortown\yarus\ScannerActivity.java'
+$activitySource = Get-Content -LiteralPath $activity -Raw -Encoding UTF8
+if ($activitySource -match 'addOn(?:Success|Failure|Complete)Listener\s*\(\s*analyzerExecutor') {
+    throw 'Колбэк ML Kit снова привязан к завершаемому analyzerExecutor: выход из сканера может аварийно закрыть приложение.'
+}
+if ($activitySource -notmatch '(?s)onDestroy\(\).*?finished\s*=\s*true;.*?analyzerExecutor\.shutdownNow\(\)') {
+    throw 'ScannerActivity должен запретить поздние колбэки до остановки executor.'
+}
+Write-Host 'PASS: scanner lifecycle does not dispatch late ML Kit callbacks to a stopped executor'

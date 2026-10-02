@@ -50,8 +50,8 @@ try {
 
 $output = Join-Path $root 'dist\android'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-$apk = Join-Path $output 'YARUS-1.3.1-RuStore.apk'
-$aab = Join-Path $output 'YARUS-1.3.1-RuStore.aab'
+$apk = Join-Path $output 'YARUS-1.3.2-RuStore.apk'
+$aab = Join-Path $output 'YARUS-1.3.2-RuStore.aab'
 $certificate = Join-Path $output 'YARUS-upload-certificate.pem'
 # Do not leave an obsolete installable beside the current release: it is too
 # easy to send the wrong APK from Explorer. Only generated release artifacts

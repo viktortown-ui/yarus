@@ -28,6 +28,7 @@ import android.widget.TextView;
 
 import androidx.activity.ComponentActivity;
 import androidx.annotation.NonNull;
+import androidx.annotation.OptIn;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ExperimentalGetImage;
 import androidx.camera.core.ImageProxy;
@@ -50,6 +51,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Full-screen, on-device barcode scanner for Android phone and tablet builds. */
+@OptIn(markerClass = ExperimentalGetImage.class)
 public final class ScannerActivity extends ComponentActivity {
     public static final String EXTRA_VALUE = "ru.viktortown.yarus.scan.VALUE";
     public static final String EXTRA_FORMAT = "ru.viktortown.yarus.scan.FORMAT";
@@ -220,19 +222,31 @@ public final class ScannerActivity extends ComponentActivity {
         }
     }
 
-    @ExperimentalGetImage
     private void analyze(@NonNull ImageProxy proxy) {
-        if (paused || finished || scanner == null) { proxy.close(); return; }
+        BarcodeScanner activeScanner = scanner;
+        if (paused || finished || activeScanner == null) { proxy.close(); return; }
         Image mediaImage = proxy.getImage();
         if (mediaImage == null) { proxy.close(); return; }
         int rotation = proxy.getImageInfo().getRotationDegrees();
         int width = rotation % 180 == 0 ? proxy.getWidth() : proxy.getHeight();
         int height = rotation % 180 == 0 ? proxy.getHeight() : proxy.getWidth();
         InputImage image = InputImage.fromMediaImage(mediaImage, rotation);
-        scanner.process(image)
-                .addOnSuccessListener(analyzerExecutor, barcodes -> inspect(barcodes, width, height))
-                .addOnFailureListener(analyzerExecutor, error -> setStatus("Не удаётся распознать код. Наведите резкость касанием."))
-                .addOnCompleteListener(analyzerExecutor, ignored -> proxy.close());
+        try {
+            activeScanner.process(image)
+                    // ML Kit may finish a frame after the activity has started closing. Keep
+                    // its callbacks off analyzerExecutor: that executor is stopped in
+                    // onDestroy and would otherwise reject the late callback on the main
+                    // thread, crashing the whole application while leaving the scanner.
+                    .addOnSuccessListener(ContextCompat.getMainExecutor(this),
+                            barcodes -> inspect(barcodes, width, height))
+                    .addOnFailureListener(ContextCompat.getMainExecutor(this),
+                            error -> setStatus("Не удаётся распознать код. Наведите резкость касанием."))
+                    .addOnCompleteListener(ContextCompat.getMainExecutor(this),
+                            ignored -> proxy.close());
+        } catch (RuntimeException error) {
+            proxy.close();
+            if (!finished) setStatus("Не удаётся обработать кадр. Повторите сканирование.");
+        }
     }
 
     private void inspect(List<Barcode> barcodes, int width, int height) {
@@ -355,9 +369,16 @@ public final class ScannerActivity extends ComponentActivity {
     }
 
     @Override protected void onDestroy() {
+        finished = true;
         paused = true;
-        if (controller != null) controller.clearImageAnalysisAnalyzer();
-        if (scanner != null) scanner.close();
+        if (controller != null) {
+            controller.clearImageAnalysisAnalyzer();
+            controller = null;
+        }
+        if (scanner != null) {
+            scanner.close();
+            scanner = null;
+        }
         analyzerExecutor.shutdownNow();
         super.onDestroy();
     }

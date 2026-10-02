@@ -3,10 +3,17 @@ Browser persistence is explicitly replaced by an in-memory adapter (see ui_smoke
 Transport delegates to urllib because sandbox browser navigation is policy-blocked.
 This verifies client/server integration, not device networking or actual IndexedDB.
 """
-import asyncio, json, os, pathlib, subprocess, tempfile, urllib.request, urllib.error, re
+import asyncio, json, os, pathlib, shutil, subprocess, tempfile, urllib.request, urllib.error, re
 from playwright.async_api import async_playwright
-from ui_smoke import mount
+from ui_smoke import chromium_launch_options, mount
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+
+def go_executable():
+ candidate=os.environ.get('YARUS_GO') or shutil.which('go')
+ if candidate:return candidate
+ bundled=ROOT/'.tooling'/'go'/'bin'/('go.exe' if os.name=='nt' else 'go')
+ if bundled.is_file():return str(bundled)
+ raise FileNotFoundError('Go not found. Set YARUS_GO or install Go.')
 
 def request(base,path,data=None,token=''):
  try:
@@ -15,12 +22,15 @@ def request(base,path,data=None,token=''):
  except urllib.error.HTTPError as e:return {'status':e.code,'body':json.loads(e.read())}
 
 async def main():
- subprocess.run(['go','build','-o','/mnt/data/yarus-integration-server','.'],cwd=ROOT,check=True)
  reports=[]
  with tempfile.TemporaryDirectory() as tmp:
+  tmp_path=pathlib.Path(tmp)
+  server=tmp_path/('yarus-integration-server.exe' if os.name=='nt' else 'yarus-integration-server')
+  data=tmp_path/'data';data.mkdir()
+  subprocess.run([go_executable(),'build','-o',str(server),'.'],cwd=ROOT,check=True)
   import socket
   sock=socket.socket();sock.bind(('127.0.0.1',0));port=sock.getsockname()[1];sock.close();base=f'http://127.0.0.1:{port}'
-  proc=subprocess.Popen(['/mnt/data/yarus-integration-server','--headless','--listen',f'127.0.0.1:{port}','--data',tmp],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+  proc=subprocess.Popen([str(server),'--headless','--listen',f'127.0.0.1:{port}','--data',str(data)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
   try:
    setup=''
    for _ in range(15):
@@ -33,7 +43,7 @@ async def main():
    other=request(base,'/api/join',{'code':invite['body']['code'],'login':'worker','name':'Кладовщик','password':'testpass-12345'})
    assert other['status']==200,other;ob=other['body']
    async with async_playwright() as pw:
-    browser=await pw.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
+    browser=await pw.chromium.launch(**chromium_launch_options())
     pages=[];allerrors=[]
     for auth in [oa,ob]:
      page,errors=await mount(browser);allerrors.append(errors)
@@ -46,7 +56,7 @@ async def main():
        if(window.loseNextAck&&path==='/api/command'){window.loseNextAck=false;throw Object.assign(new Error('Test lost ACK'),{network:true});}
        if(r.status!==200)throw Object.assign(new Error(r.body.error),{status:r.status});return r.body;
       };
-      cfg={mode:'remote',server:base,token:auth.token,login:auth.state.me.login};state=null;queue=[];await acceptState(auth.state);network='online';render();
+      cfg={...cfg,mode:'remote',server:base,token:auth.token,login:auth.state.me.login};state=null;queue=[];await acceptState(auth.state);network='online';render();
      }''',{'base':base,'auth':auth});pages.append(page)
     a,b=pages
     await a.evaluate("send({id:id(),type:'item',item:{id:'sync-product',name:'Болт',sku:'SYNC',barcode:'',category:'Крепёж',unit:'шт',min:0,price:100,fields:{},note:'',archived:false,version:0}})")
@@ -82,5 +92,5 @@ async def main():
     await browser.close()
   finally:proc.terminate();proc.wait(timeout=5)
  report='\n'.join(reports)+'\n\nReal HTTP + real server journal; client persistence uses explicit in-memory adapter. No native-device validation.\n'
- (ROOT/'docs/client-sync-tests.txt').write_text(report);print(report)
+ (ROOT/'docs/client-sync-tests.txt').write_text(report,encoding='utf-8');print(report)
 asyncio.run(main())

@@ -1,5 +1,7 @@
 package ru.viktortown.yarus;
 
+import java.util.Locale;
+
 /** Pure validation and stability rules shared by the native camera flow. */
 public final class BarcodeScanPolicy {
     public static final int REQUIRED_MATCHES = 3;
@@ -58,7 +60,7 @@ public final class BarcodeScanPolicy {
 
     static String normalizeFormat(String value) {
         if (value == null) return null;
-        switch (value.trim().toUpperCase()) {
+        switch (value.trim().toUpperCase(Locale.ROOT)) {
             case "QR":
             case "QR_CODE": return "QR";
             case "EAN13":

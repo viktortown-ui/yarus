@@ -3,7 +3,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '1.3.1'
+$version = '1.3.2'
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
 $outputBase = [IO.Path]::GetFullPath($OutputRoot).TrimEnd('\')

@@ -1,11 +1,11 @@
-# Скачать ЯРУС 1.3.1
+# Скачать ЯРУС 1.3.2
 
 ## Для компьютера Windows
 
 Скачайте архив, полностью распакуйте его в обычную папку и запустите
 `YARUS.exe`:
 
-**https://github.com/viktortown-ui/yarus/releases/download/v1.3.1/YARUS-1.3.1-Windows-x64.zip**
+**https://github.com/viktortown-ui/yarus/releases/download/v1.3.2/YARUS-1.3.2-Windows-x64.zip**
 
 Не запускайте программу прямо из ZIP: рядом с `YARUS.exe` находятся файлы,
 которые нужны приложению для работы.
@@ -14,13 +14,13 @@
 
 APK для ручной установки:
 
-**https://github.com/viktortown-ui/yarus/releases/download/v1.3.1/YARUS-1.3.1-Android.apk**
+**https://github.com/viktortown-ui/yarus/releases/download/v1.3.2/YARUS-1.3.2-Android.apk**
 
 ## Страница выпуска
 
 Описание версии, инструкция и контрольные суммы:
 
-**https://github.com/viktortown-ui/yarus/releases/tag/v1.3.1**
+**https://github.com/viktortown-ui/yarus/releases/tag/v1.3.2**
 
 ## Безопасность
 

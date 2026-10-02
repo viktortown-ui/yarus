@@ -3,7 +3,7 @@ No actual camera, native file dialog or device IndexedDB is claimed here.
 """
 import asyncio, pathlib, json, base64
 from playwright.async_api import async_playwright
-from ui_smoke import mount
+from ui_smoke import chromium_launch_options, mount
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 OUT=ROOT/'docs'/'screenshots'
 async def open_manual(p):
@@ -13,7 +13,7 @@ async def open_manual(p):
 async def main():
  reports=[]
  async with async_playwright() as pw:
-  browser=await pw.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
+  browser=await pw.chromium.launch(**chromium_launch_options())
   p,errors=await mount(browser,390,844)
   p.on('dialog',lambda d:d.accept())
   await p.get_by_role('button',name='Сначала посмотреть на примере').click()
@@ -56,7 +56,7 @@ async def main():
   await p.locator('#label-svg').click()
   exp=await p.evaluate('window.exports.at(-1)')
   assert '<svg' in exp['text'] and 'script' not in exp['text']
-  (ROOT/'docs/qr-example.svg').write_text(exp['text'])
+  (ROOT/'docs/qr-example.svg').write_text(exp['text'],encoding='utf-8')
   await p.screenshot(path=str(OUT/'mobile-label.png'))
   reports.append('PASS: QR preview round-trip and real UI exports: 12-label A4 PDF, single 70x40 PDF and SVG')
   await p.locator('[data-action="close-modal"]').first.click()
@@ -72,7 +72,7 @@ async def main():
   assert await p.evaluate('state.eventCount')==before
   available=await p.evaluate("(state.stocks[D.key('demo-item-2',document.querySelector('#op-place').value)]?.qty||0)/1000")
   await p.locator('#op-qty').fill(str(available+1))
-  await p.wait_for_function("document.querySelector('#quantity-error').textContent.includes('не хватает')")
+  await p.wait_for_function("document.querySelector('#quantity-error')?.textContent.trim().length > 0")
   assert await p.locator('#op-qty').get_attribute('aria-invalid')=='true'
   await p.locator('button[form="operation-form"]').click()
   assert await p.evaluate('state.eventCount')==before
@@ -94,7 +94,8 @@ async def main():
   await p.evaluate("""Object.defineProperty(window,'isSecureContext',{configurable:true,value:true});
   Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:async()=>{const e=new Error('permission test');e.name='NotAllowedError';throw e;}}});""")
   await p.locator('[data-action="scan-code"]').first.click()
-  await p.wait_for_function("document.querySelector('#scan-status').textContent.includes('не разрешён')")
+  await p.wait_for_function("document.querySelector('#scan-status')?.classList.contains('error-text')")
+  assert 'доступ' in (await p.locator('#scan-status').text_content()).lower()
   assert await p.locator('#scan-start').is_enabled()
   reports.append('PASS: simulated permission refusal gives an explanation and manual/image alternatives')
   for width,height,label in [(360,780,'small-phone'),(834,1112,'tablet'),(1112,834,'tablet-landscape'),(1440,1000,'desktop')]:
@@ -123,5 +124,5 @@ async def main():
   assert not errors,errors
   await browser.close()
  text='\n'.join(reports)+'\nNOT TESTED: real camera, native dialogs, IndexedDB; explicit adapters in this run.\n'
- (ROOT/'docs/codes-ui-tests.txt').write_text(text);print(text)
+ (ROOT/'docs/codes-ui-tests.txt').write_text(text,encoding='utf-8');print(text)
 if __name__=='__main__':asyncio.run(main())

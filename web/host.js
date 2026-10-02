@@ -1,7 +1,7 @@
 /* Android-only authoritative warehouse host. Data at rest is encrypted by Android Keystore. */
 (function(root){
  'use strict';
- const D=root.YarusDomain,APP_VERSION='1.3.1',DAY=86400,RECENT_COMMAND_LIMIT=D.RECENT_COMMAND_LIMIT||10000,ANDROID_WARN_BYTES=160*1024*1024,ANDROID_STOP_BYTES=220*1024*1024;
+ const D=root.YarusDomain,APP_VERSION='1.3.2',DAY=86400,RECENT_COMMAND_LIMIT=D.RECENT_COMMAND_LIMIT||10000,ANDROID_WARN_BYTES=160*1024*1024,ANDROID_STOP_BYTES=220*1024*1024;
  let state=null,addresses=[],running=false;
  const attempts=new Map();
  const secureIDs=new Map();

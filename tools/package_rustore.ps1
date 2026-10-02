@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing.Common -ErrorAction Stop
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
-$version = '1.3.1'
+$version = '1.3.2'
 $target = Join-Path $dist 'RuStore'
 $binaries = Join-Path $target 'binaries'
 $icon = Join-Path $target 'icon'
@@ -16,7 +16,7 @@ foreach ($required in @(
     (Join-Path $dist "android\YARUS-$version-RuStore.aab"),
     (Join-Path $dist 'android\YARUS-upload-certificate.pem'),
     (Join-Path $target 'screenshots\phone\01-overview-1080x1920.png'),
-    (Join-Path $target 'screenshots\tablet\01-overview-1600x2560.png')
+    (Join-Path $target 'screenshots\tablet\01-overview-1080x1920.png')
 )) { if (-not (Test-Path -LiteralPath $required)) { throw "Missing release artifact: $required" } }
 
 # Keep freshly generated screenshots, but never mix binaries or metadata from an older release.

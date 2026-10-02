@@ -68,7 +68,7 @@ init();
     assert.match(created.name, /^YARUS-.*\.yarus\.json$/);
     assert.equal(created.value.format, 'yarus-data');
     assert.equal(created.value.version, 2);
-    assert.equal(created.value.portable.appVersion, '1.3.1');
+    assert.equal(created.value.portable.appVersion, '1.3.2');
     assert.equal(created.value.me, undefined);
     assert.equal(created.value.localSeen, undefined);
 

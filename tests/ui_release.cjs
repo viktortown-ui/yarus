@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
 const SCREENSHOTS = path.join(ROOT, 'dist', 'RuStore', 'screenshots');
-const REPORT = path.join(ROOT, 'docs', 'YARUS-1.3.1-stock-report-example.pdf');
+const REPORT = path.join(ROOT, 'docs', 'YARUS-1.3.2-stock-report-example.pdf');
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 
 const ADAPTER = `
@@ -155,19 +155,22 @@ async function phoneShots(browser) {
 async function tabletShotsAndReport(browser) {
   const folder = path.join(SCREENSHOTS, 'tablet');
   fs.mkdirSync(folder, { recursive: true });
-  const { context, page, errors } = await mount(browser, { width: 800, height: 1280 }, 2);
-  await shot(page, folder, '01-overview-1600x2560.png');
+  for (const name of fs.readdirSync(folder)) {
+    if (name.toLowerCase().endsWith('.png')) fs.unlinkSync(path.join(folder, name));
+  }
+  const { context, page, errors } = await mount(browser, { width: 900, height: 1600 }, 1.2);
+  await shot(page, folder, '01-overview-1080x1920.png');
   await page.locator('.nav [data-nav="stock"]').click();
-  await shot(page, folder, '02-stock-1600x2560.png');
+  await shot(page, folder, '02-stock-1080x1920.png');
   await page.locator('.nav [data-nav="places"]').click();
-  await shot(page, folder, '03-places-1600x2560.png');
+  await shot(page, folder, '03-places-1080x1920.png');
   await page.locator('.nav [data-nav="history"]').click();
-  await shot(page, folder, '04-history-1600x2560.png');
+  await shot(page, folder, '04-history-1080x1920.png');
   await page.locator('.nav [data-nav="settings"]').click();
   await page.evaluate(() => { window.AndroidFiles = { portableInfo: () => JSON.stringify({ attached: false, name: '', bytes: 0 }) }; render(); });
-  await shot(page, folder, '06-portable-file-1600x2560.png', '.portable-box');
+  await shot(page, folder, '06-portable-file-1080x1920.png', '.portable-box');
   await page.locator('[data-action="export-pdf"]').click();
-  await shot(page, folder, '05-pdf-report-1600x2560.png');
+  await shot(page, folder, '05-pdf-report-1080x1920.png');
   const downloadEvent = page.waitForEvent('download');
   await page.locator('button[form="report-form"]').click();
   const download = await downloadEvent;
