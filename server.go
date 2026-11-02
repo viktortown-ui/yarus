@@ -41,6 +41,12 @@ const maxQty int64 = 1_000_000_000_000
 const maxPrice int64 = 10_000_000_000_000
 const historySegmentSize = 5000
 const recentCommandLimit = 10000
+const maxItems = 50000
+const maxPlaces = 2000
+const maxImportRows = 10000
+const maxBatchRows = 500
+const maxItemFields = 24
+const maxCommandBytes int64 = 16 << 20
 const backupRetention = 30
 
 const (
@@ -190,6 +196,7 @@ type Patch struct {
 	ClearTransfer bool          `json:"clearTransfer,omitempty"`
 	TransportKey  *string       `json:"transportKey,omitempty"`
 	Full          *State        `json:"full,omitempty"`
+	Batch         []Patch       `json:"batch,omitempty"`
 }
 type Record struct {
 	Version    int             `json:"v,omitempty"`
@@ -198,6 +205,13 @@ type Record struct {
 	Ciphertext string          `json:"ciphertext,omitempty"`
 	Hash       string          `json:"hash"`
 }
+
+// Version 2 marks records with atomic document patches. A 1.x reader must stop
+// at this record rather than successfully replaying an unknown patch as empty.
+func documentRecordHash(previous, nonce, ciphertext string) string {
+	return hash("YARUS-JOURNAL-2|" + previous + "|" + nonce + "|" + ciphertext)
+}
+
 type Store struct {
 	mu       sync.RWMutex
 	S        State
@@ -332,6 +346,9 @@ func apply(s *State, p Patch) {
 		pruneSeen(s)
 		return
 	}
+	for _, child := range p.Batch {
+		apply(s, child)
+	}
 	s.Seq = p.Seq
 	if p.Space != nil {
 		s.Space = *p.Space
@@ -421,23 +438,34 @@ func openStore(path string) (*Store, error) {
 			return nil, fmt.Errorf("journal integrity error at byte %d; preserve file and restore verified backup", offset)
 		}
 		var plain []byte
-		if rec.Version == 1 {
-			if len(rec.Data) != 0 || rec.Hash != encryptedRecordHash(st.previous, rec.Nonce, rec.Ciphertext) {
+		if rec.Version == 1 || rec.Version == 2 {
+			expectedHash := encryptedRecordHash(st.previous, rec.Nonce, rec.Ciphertext)
+			if rec.Version == 2 {
+				expectedHash = documentRecordHash(st.previous, rec.Nonce, rec.Ciphertext)
+			}
+			if len(rec.Data) != 0 || rec.Hash != expectedHash {
 				f.Close()
 				return nil, fmt.Errorf("journal integrity error at byte %d; preserve file and restore verified backup", offset)
 			}
 			plain, e = openJournalRecord(st.key, rec.Nonce, rec.Ciphertext, st.previous)
-		} else {
+		} else if rec.Version == 0 {
 			legacy = true
 			if rec.Hash != hash(st.previous+string(rec.Data)) {
 				e = errors.New("legacy journal hash mismatch")
 			} else {
 				plain = rec.Data
 			}
+		} else {
+			f.Close()
+			return nil, fmt.Errorf("unsupported journal version %d at byte %d; use a newer YARUS version", rec.Version, offset)
 		}
 		if e != nil || json.Unmarshal(plain, &p) != nil || p.Seq != st.S.Seq+1 {
 			f.Close()
 			return nil, fmt.Errorf("journal integrity error at byte %d; preserve file and restore verified backup", offset)
+		}
+		if len(p.Batch) > 0 && rec.Version != 2 {
+			f.Close()
+			return nil, fmt.Errorf("document journal record requires version 2 at byte %d", offset)
 		}
 		apply(&st.S, p)
 		st.previous = rec.Hash
@@ -494,6 +522,12 @@ func (st *Store) commit(p Patch) error {
 	if p.Event != nil {
 		p.Event.Seq = p.Seq
 	}
+	for index := range p.Batch {
+		p.Batch[index].Seq = p.Seq
+		if p.Batch[index].Event != nil {
+			p.Batch[index].Event.Seq = p.Seq
+		}
+	}
 	data, e := json.Marshal(p)
 	if e != nil {
 		return e
@@ -504,6 +538,10 @@ func (st *Store) commit(p Patch) error {
 	}
 	rec := Record{Version: 1, Nonce: nonce, Ciphertext: ciphertext}
 	rec.Hash = encryptedRecordHash(st.previous, rec.Nonce, rec.Ciphertext)
+	if len(p.Batch) > 0 {
+		rec.Version = 2
+		rec.Hash = documentRecordHash(st.previous, rec.Nonce, rec.Ciphertext)
+	}
 	line, _ := json.Marshal(rec)
 	line = append(line, '\n')
 	n, e := st.file.Write(line)
@@ -661,20 +699,23 @@ func allowedUnit(s string) bool {
 }
 
 type Command struct {
-	ID       string     `json:"id"`
-	Type     string     `json:"type"`
-	Item     *Item      `json:"item,omitempty"`
-	Place    *Place     `json:"place,omitempty"`
-	ItemID   string     `json:"itemId,omitempty"`
-	From     string     `json:"from,omitempty"`
-	To       string     `json:"to,omitempty"`
-	Qty      int64      `json:"qty"`
-	Expected int        `json:"expected"`
-	Note     string     `json:"note,omitempty"`
-	Ref      string     `json:"ref,omitempty"`
-	UserID   string     `json:"userId,omitempty"`
-	Role     string     `json:"role,omitempty"`
-	Space    *Workspace `json:"space,omitempty"`
+	ID           string     `json:"id"`
+	Type         string     `json:"type"`
+	Item         *Item      `json:"item,omitempty"`
+	Place        *Place     `json:"place,omitempty"`
+	ItemID       string     `json:"itemId,omitempty"`
+	From         string     `json:"from,omitempty"`
+	To           string     `json:"to,omitempty"`
+	Qty          int64      `json:"qty"`
+	Expected     int        `json:"expected"`
+	ExpectedUnit string     `json:"expectedUnit,omitempty"`
+	Note         string     `json:"note,omitempty"`
+	Ref          string     `json:"ref,omitempty"`
+	UserID       string     `json:"userId,omitempty"`
+	Role         string     `json:"role,omitempty"`
+	Space        *Workspace `json:"space,omitempty"`
+	Commands     []Command  `json:"commands,omitempty"`
+	Items        []Item     `json:"items,omitempty"`
 }
 
 func roleDefaults(role string) map[string]bool {
@@ -731,6 +772,97 @@ func requirePermission(u User, permission, message string) error {
 	return nil
 }
 
+func prepareCatalogImport(s *State, u User, c Command) (Patch, error) {
+	if err := requirePermission(u, permCatalog, "У вас нет права изменять каталог."); err != nil {
+		return Patch{}, err
+	}
+	if len(c.Items) < 1 || len(c.Items) > maxImportRows || len(s.Items)+len(c.Items) > maxItems {
+		return Patch{}, bad(400, "Импорт: от 1 до 10 000 новых карточек, до 50 000 товаров в складе.")
+	}
+	ids, skus, barcodes := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for id, item := range s.Items {
+		ids[id] = true
+		if item.SKU != "" {
+			skus[strings.ToLower(item.SKU)] = true
+		}
+		if item.Barcode != "" {
+			barcodes[strings.ToLower(item.Barcode)] = true
+		}
+	}
+	// Validate each new card in an empty catalog, then enforce unique keys through
+	// indexes. Repeating a complete catalog scan for every row is quadratic.
+	validation := blankState()
+	validation.Host = s.Host
+	result := Patch{Batch: make([]Patch, 0, len(c.Items))}
+	for _, source := range c.Items {
+		if source.Version != 0 || ids[source.ID] {
+			return Patch{}, bad(409, "Импорт добавляет только новые карточки. Повторяется идентификатор товара.")
+		}
+		row, err := prepare(&validation, u, Command{ID: c.ID, Type: "item", Item: &source})
+		if err != nil {
+			return Patch{}, err
+		}
+		item := row.Item
+		sku, barcode := strings.ToLower(item.SKU), strings.ToLower(item.Barcode)
+		if (sku != "" && skus[sku]) || (barcode != "" && barcodes[barcode]) {
+			return Patch{}, bad(409, "Такой артикул или штрихкод уже есть, в том числе в архиве.")
+		}
+		ids[item.ID] = true
+		if sku != "" {
+			skus[sku] = true
+		}
+		if barcode != "" {
+			barcodes[barcode] = true
+		}
+		result.Batch = append(result.Batch, row)
+	}
+	return result, nil
+}
+
+func prepareBatch(s *State, u User, c Command) (Patch, error) {
+	if len(c.Commands) < 1 || len(c.Commands) > maxBatchRows {
+		return Patch{}, bad(400, "Документ должен содержать от 1 до 500 строк.")
+	}
+	// Only movements are allowed. Clone the portions that apply can change, so
+	// even a failure in the final row leaves the authoritative state untouched.
+	staged := *s
+	staged.Stocks = make(map[string]Stock, len(s.Stocks))
+	for id, stock := range s.Stocks {
+		staged.Stocks[id] = stock
+	}
+	staged.Events = append([]Event(nil), s.Events...)
+	staged.HistorySegments = append([][]Event(nil), s.HistorySegments...)
+	ids := map[string]bool{c.ID: true}
+	eachHistory(s, func(event *Event) bool { ids[event.ID] = true; return true })
+	result := Patch{Batch: make([]Patch, 0, len(c.Commands))}
+	for _, command := range c.Commands {
+		if !validID(command.ID) || ids[command.ID] || (command.Type != "in" && command.Type != "out" && command.Type != "transfer" && command.Type != "count") {
+			return Patch{}, bad(400, "В документе повторяется строка или указан недопустимый вид движения.")
+		}
+		ids[command.ID] = true
+		if command.Note == "" {
+			command.Note = c.Note
+		}
+		if command.Ref == "" {
+			command.Ref = c.Ref
+			if command.Ref == "" {
+				command.Ref = c.ID
+			}
+		}
+		row, err := prepare(&staged, u, command)
+		if err != nil {
+			return Patch{}, err
+		}
+		row.Seq = s.Seq + 1
+		if row.Event != nil {
+			row.Event.Seq = row.Seq
+		}
+		apply(&staged, row)
+		result.Batch = append(result.Batch, row)
+	}
+	return result, nil
+}
+
 func prepare(s *State, u User, c Command) (Patch, error) {
 	p := Patch{}
 	if s.Host.Status != "active" {
@@ -749,6 +881,10 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 		return p, bad(400, "Слишком длинный комментарий или номер документа.")
 	}
 	switch c.Type {
+	case "catalog-import":
+		return prepareCatalogImport(s, u, c)
+	case "batch":
+		return prepareBatch(s, u, c)
 	case "item":
 		if e := requirePermission(u, permCatalog, "У вас нет права изменять каталог."); e != nil {
 			return p, e
@@ -761,8 +897,13 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 		x.SKU = strings.TrimSpace(x.SKU)
 		x.Barcode = strings.TrimSpace(x.Barcode)
 		x.Category = strings.TrimSpace(x.Category)
-		if !validID(x.ID) || x.Name == "" || !text(x.Name, 150) || !text(x.SKU, 80) || !text(x.Barcode, 80) || !text(x.Category, 80) || !text(x.Note, 2000) || !allowedUnit(x.Unit) || x.Min < 0 || x.Min > maxQty || x.Price < 0 || x.Price > maxPrice || len(x.Fields) > 12 {
-			return p, bad(400, "Проверьте название, единицу, цену и минимум. До 12 дополнительных полей.")
+		if !allowed(u, permViewPrices) {
+			// Sanitized snapshots contain price 0. Editing a visible field must not
+			// erase the authoritative price or allow a blind price change.
+			x.Price = s.Items[x.ID].Price
+		}
+		if !validID(x.ID) || x.Name == "" || !text(x.Name, 150) || !text(x.SKU, 80) || !text(x.Barcode, 80) || !text(x.Category, 80) || !text(x.Note, 2000) || !allowedUnit(x.Unit) || x.Min < 0 || x.Min > maxQty || x.Price < 0 || x.Price > maxPrice || len(x.Fields) > maxItemFields {
+			return p, bad(400, "Проверьте название, единицу, цену и минимум. До 24 дополнительных полей.")
 		}
 		for k, v := range x.Fields {
 			if strings.TrimSpace(k) == "" || !text(k, 40) || !text(v, 160) {
@@ -773,8 +914,8 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 		if exists && x.Version != old.Version {
 			return p, bad(409, "Карточку уже изменил другой участник. Обновите и повторите.")
 		}
-		if !exists && len(s.Items) >= 5000 {
-			return p, bad(409, "Лимит этой версии — 5000 карточек на склад.")
+		if !exists && len(s.Items) >= maxItems {
+			return p, bad(409, "Лимит — 50 000 карточек на склад.")
 		}
 		if exists && x.Unit != old.Unit {
 			hasHistory := false
@@ -819,8 +960,8 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 		if old.Version != x.Version {
 			return p, bad(409, "Место уже изменено. Обновите данные.")
 		}
-		if old.Version == 0 && len(s.Places) >= 200 {
-			return p, bad(409, "Лимит — 200 мест хранения.")
+		if old.Version == 0 && len(s.Places) >= maxPlaces {
+			return p, bad(409, "Лимит — 2000 мест хранения.")
 		}
 		for id, x2 := range s.Places {
 			if id != x.ID && strings.EqualFold(x.Name, x2.Name) {
@@ -939,6 +1080,9 @@ func prepare(s *State, u User, c Command) (Patch, error) {
 				e.Changes = []Delta{{c.ItemID, c.From, -c.Qty}, {c.ItemID, c.To, c.Qty}}
 			}
 			if c.Type == "count" {
+				if c.ExpectedUnit != "" && c.ExpectedUnit != item.Unit {
+					return p, bad(409, "Единица учёта изменилась после начала пересчёта. Начните новый пересчёт.")
+				}
 				old := s.Stocks[key(c.ItemID, c.To)]
 				if old.Version != c.Expected {
 					return p, bad(409, "Во время пересчёта остаток изменился. Откройте пересчёт заново.")
@@ -992,9 +1136,10 @@ func snapshot(s *State, u User, all bool) map[string]any {
 		"format": "yarus-data", "version": 2, "seq": s.Seq, "space": s.Space,
 		"host": s.Host, "items": items, "places": s.Places, "stocks": s.Stocks,
 		"historySegments": segments, "events": events, "eventCount": historyCount(s),
-		"me":         map[string]any{"id": u.ID, "name": u.Name, "login": u.Login, "role": u.Role, "permissions": effectivePermissions(u)},
-		"serverTime": time.Now().UTC().Format(time.RFC3339),
-		"limits":     map[string]int{"items": 5000, "places": 200},
+		"me":           map[string]any{"id": u.ID, "name": u.Name, "login": u.Login, "role": u.Role, "permissions": effectivePermissions(u)},
+		"serverTime":   time.Now().UTC().Format(time.RFC3339),
+		"limits":       map[string]int{"items": maxItems, "places": maxPlaces, "importRows": maxImportRows, "batchRows": maxBatchRows, "fields": maxItemFields},
+		"capabilities": map[string]bool{"batch": true, "catalogImport": true},
 	}
 }
 
@@ -1040,7 +1185,7 @@ func validateImportedState(s State) error {
 	if s.Host.Status == "awaiting_activation" && (s.Transfer == nil || s.Transfer.ID == "" || s.Transfer.ID != s.Host.TransferID || s.Transfer.ReceiptCode == "" || s.Transfer.ActivationHash == "" || s.Transfer.ActivationToken != "") {
 		return bad(400, "В пакете повреждены сведения безопасного переноса.")
 	}
-	if s.Items == nil || s.Places == nil || s.Stocks == nil || s.Users == nil || s.Seen == nil || len(s.Items) > 5000 || len(s.Places) < 1 || len(s.Places) > 200 || len(s.Users) < 1 || len(s.Users) > 500 || len(s.Seen) > recentCommandLimit {
+	if s.Items == nil || s.Places == nil || s.Stocks == nil || s.Users == nil || s.Seen == nil || len(s.Items) > maxItems || len(s.Places) < 1 || len(s.Places) > maxPlaces || len(s.Users) < 1 || len(s.Users) > 500 || len(s.Seen) > recentCommandLimit {
 		return bad(400, "Пакет превышает ограничения этой версии или содержит неполные данные.")
 	}
 	if len(s.Events) > historySegmentSize {
@@ -1060,9 +1205,20 @@ func validateImportedState(s State) error {
 			return bad(400, "В пакете повреждено место хранения.")
 		}
 	}
+	itemSKUs, itemBarcodes := map[string]bool{}, map[string]bool{}
 	for id, item := range s.Items {
-		if id != item.ID || !validID(id) || strings.TrimSpace(item.Name) == "" || !text(item.Name, 150) || !text(item.SKU, 80) || !text(item.Barcode, 80) || !text(item.Category, 80) || !text(item.Note, 2000) || !allowedUnit(item.Unit) || item.Min < 0 || item.Min > maxQty || item.Price < 0 || item.Price > maxPrice || item.Version < 1 || len(item.Fields) > 12 {
+		if id != item.ID || !validID(id) || strings.TrimSpace(item.Name) == "" || !text(item.Name, 150) || !text(item.SKU, 80) || !text(item.Barcode, 80) || !text(item.Category, 80) || !text(item.Note, 2000) || !allowedUnit(item.Unit) || item.Min < 0 || item.Min > maxQty || item.Price < 0 || item.Price > maxPrice || item.Version < 1 || len(item.Fields) > maxItemFields {
 			return bad(400, "В пакете повреждена карточка товара.")
+		}
+		sku, barcode := strings.ToLower(item.SKU), strings.ToLower(item.Barcode)
+		if (sku != "" && itemSKUs[sku]) || (barcode != "" && itemBarcodes[barcode]) {
+			return bad(400, "В пакете повторяется артикул или штрихкод.")
+		}
+		if sku != "" {
+			itemSKUs[sku] = true
+		}
+		if barcode != "" {
+			itemBarcodes[barcode] = true
 		}
 		for key, value := range item.Fields {
 			if strings.TrimSpace(key) == "" || !text(key, 40) || !text(value, 160) {
@@ -1272,7 +1428,7 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ready := len(a.st.S.Users) > 0
 		host := a.st.S.Host
 		a.st.mu.RUnlock()
-		writeJSON(w, 200, map[string]any{"version": appVersion, "ready": ready, "name": "ЯРУС", "host": host})
+		writeJSON(w, 200, map[string]any{"version": appVersion, "ready": ready, "name": "ЯРУС", "host": host, "capabilities": map[string]bool{"batch": true, "catalogImport": true}})
 		return
 	}
 	if r.URL.Path == "/api/secure" && r.Method == "POST" {
@@ -1557,7 +1713,7 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/command" && r.Method == "POST" {
 		var c Command
-		if e := readJSON(w, r, &c); e != nil {
+		if e := readJSONLimit(w, r, &c, maxCommandBytes); e != nil {
 			fail(w, e)
 			return
 		}

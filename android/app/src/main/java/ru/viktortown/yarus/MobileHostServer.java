@@ -110,7 +110,8 @@ public final class MobileHostServer {
                 try { length = Integer.parseInt(headers.get("content-length")); }
                 catch (Exception error) { send(client, 400, "{\"error\":\"Некорректный размер запроса.\"}", origin); return; }
             }
-            if (length < 0 || length > (2 << 20) || headers.containsKey("transfer-encoding")) {
+            int maxBody = path.equals("/api/secure") ? (24 << 20) : path.equals("/api/command") ? (16 << 20) : (2 << 20);
+            if (length < 0 || length > maxBody || headers.containsKey("transfer-encoding")) {
                 send(client, 413, "{\"error\":\"Запрос слишком большой.\"}", origin); return;
             }
             byte[] bodyBytes = readExact(input, length);

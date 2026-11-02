@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
 const SCREENSHOTS = path.join(ROOT, 'dist', 'RuStore', 'screenshots');
-const REPORT = path.join(ROOT, 'docs', 'YARUS-1.3.2-stock-report-example.pdf');
+const REPORT = path.join(ROOT, 'docs', 'YARUS-2.0.0-stock-report-example.pdf');
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 
 const ADAPTER = `
@@ -30,11 +30,12 @@ async function mount(browser, viewport, deviceScaleFactor) {
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
   let html = source('index.html')
-    .replace('<link rel="stylesheet" href="style.css">', `<style>${source('style.css')}</style>`)
+    .replace('<link rel="stylesheet" href="style.css">', `<style>${source('style.css')}\n${source('workspace.css')}</style>`)
+    .replace('<link rel="stylesheet" href="workspace.css">', '')
     .replace(/<script src="[^"]+"><\/script>/g, '')
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]+>/g, '');
   await page.setContent(html);
-  for (const name of ['domain.js', 'transport.js', 'host.js', 'transfer.js', 'vendor/qr-encode.js', 'vendor/qr-decode.js', 'vendor/code128-patterns.js', 'codes.js', 'reports.js', 'scanner.js']) {
+  for (const name of ['domain.js', 'transport.js', 'host.js', 'transfer.js', 'vendor/qr-encode.js', 'vendor/qr-decode.js', 'vendor/code128-patterns.js', 'codes.js', 'reports.js', 'scanner.js', 'workspace.js']) {
     await page.addScriptTag({ content: source(name) });
   }
   let app = source('app.js').trimEnd();
@@ -62,6 +63,11 @@ async function shot(page, folder, name, selector = '') {
 async function phoneShots(browser) {
   const folder = path.join(SCREENSHOTS, 'phone');
   fs.mkdirSync(folder, { recursive: true });
+  for (const name of fs.readdirSync(folder)) {
+    if (name.toLowerCase().endsWith('.png')) fs.unlinkSync(path.join(folder, name));
+  }
+  const qaFolder = path.join(ROOT, 'dist', 'QA');
+  fs.mkdirSync(qaFolder, { recursive: true });
   const { context, page, errors } = await mount(browser, { width: 360, height: 640 }, 3);
   await page.evaluate(() => {
     window.AndroidFiles = { systemInsets: () => JSON.stringify({ top: 24, right: 0, bottom: 24, left: 0 }) };
@@ -69,16 +75,15 @@ async function phoneShots(browser) {
   });
   assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--native-safe-top').trim()), '24px');
   assert.ok(await page.evaluate(() => document.querySelector('.mobile-brand').getBoundingClientRect().top >= 24));
-  assert.equal(await page.locator('.warehouse-map-card').isHidden(), true);
-  assert.equal(await page.locator('.home-mobile-links').isVisible(), true);
-  assert.equal(await page.locator('.home-history-card').isHidden(), true);
-  assert.ok(await page.evaluate(() => document.querySelector('.home-mobile-links').getBoundingClientRect().top < document.querySelector('.home-metrics').getBoundingClientRect().top));
-  assert.ok(await page.evaluate(() => [...document.querySelectorAll('.home-actions .btn,.home-mobile-link,.mobile-nav button')].every(element => element.getBoundingClientRect().height >= 44)));
+  assert.equal(await page.locator('.workspace-shortcuts').isVisible(), true);
+  assert.equal(await page.locator('.workspace-recent').isVisible(), true);
+  assert.ok(await page.evaluate(() => [...document.querySelectorAll('.home-actions .btn,.workspace-shortcut,.mobile-nav button')].every(element => element.hidden || element.getBoundingClientRect().height >= 44)));
   await shot(page, folder, '01-overview-1080x1920.png');
-  await page.locator('.home-mobile-link[data-nav="history"]').click();
+  await page.locator('.workspace-recent [data-nav="history"]').click();
   assert.equal(await page.getAttribute('body', 'data-page'), 'history');
   await page.locator('.mobile-nav [data-nav="home"]').click();
-  await page.locator('.home-mobile-link[data-action="open-shelf"]').click();
+  await page.evaluate(() => { cfg.modules = { ...cfg.modules, map: true }; render(); });
+  await page.locator('.workspace-shortcut[data-action="open-shelf"]').click();
   assert.equal(await page.getAttribute('body', 'data-page'), 'shelf');
   assert.equal(await page.locator('.mobile-nav').isVisible(), false);
   assert.ok(await page.evaluate(() => document.querySelector('.shelf-back').getBoundingClientRect().top >= 24));
@@ -87,7 +92,7 @@ async function phoneShots(browser) {
   await page.locator('.shelf-book').first().click();
   assert.equal(await page.locator('.shelf-item-page').isVisible(), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-  await shot(page, folder, '11-warehouse-item-1080x1920.png');
+  await shot(page, qaFolder, 'warehouse-item-phone.png');
   await page.locator('[data-action="shelf-back"]').click();
   await page.locator('[data-action="shelf-back"]').click();
   await page.locator('.mobile-nav [data-nav="stock"]').click();
@@ -190,6 +195,7 @@ async function responsiveShelfChecks(browser) {
     { width: 1440, height: 1000 }
   ]) {
     const { context, page, errors } = await mount(browser, viewport, 1);
+    await page.evaluate(() => { cfg.modules = { ...cfg.modules, map: true }; render(); });
     await page.locator('[data-action="open-shelf"]:visible').click();
     assert.equal(await page.getAttribute('body', 'data-page'), 'shelf');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);

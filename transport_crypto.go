@@ -96,7 +96,7 @@ func sealTransport(keyText, id, direction string, plain []byte) (transportEnvelo
 
 func (a *Server) secureRequest(w http.ResponseWriter, r *http.Request) {
 	var envelope transportEnvelope
-	if err := readJSONLimit(w, r, &envelope, 4<<20); err != nil {
+	if err := readJSONLimit(w, r, &envelope, 24<<20); err != nil {
 		fail(w, err)
 		return
 	}

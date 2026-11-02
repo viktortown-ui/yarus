@@ -1,0 +1,58 @@
+YARUS 2.0.0 CANDIDATE — 2026-11-03
+
+Baseline before modernization:
+PASS: 52/52 Node logic tests.
+PASS: Go server and Windows launcher tests.
+PASS: universal Android warehouse file create, mirror and recovery UI test.
+
+Integrated implementation:
+PASS: 61/61 Node logic tests and all Go server/launcher tests.
+PASS: responsive phone/tablet UI, QR preview, PDF workflow, store screenshots.
+PASS: mobile main-device creation, encrypted handoff and safe cancellation UI.
+PASS: universal Android warehouse file create, auto-mirror and recovery UI.
+PASS: Python UI smoke (search, item creation, exact fractional movement,
+      insufficient-stock error, desktop/tablet/phone layouts and themes).
+PASS: two authenticated clients with real HTTP and a real server journal:
+      offline drafts/conflicts, lost acknowledgement retry without duplicate,
+      balanced transfer and rejection of fake private-looking domains.
+Client storage in browser tests uses an explicit in-memory adapter.
+
+PASS: ui_workspace + ui_modern: profile/module controls, catalog pagination,
+      guided fields, related item creation, movement preview, sparse CSV export,
+      saved count drafts, preview, cross-warehouse retry acknowledgement,
+      failed-disk-write retry without an unpersisted stock movement.
+PASS: sync_live: real built server atomic documents/import, restart recovery
+      and a lost acknowledgement retried without a duplicate movement.
+PASS: ui_packed: exact embedded JS/CSS matches normalized source; packed CSP;
+      offline file:// open and reload with real browser IndexedDB, no HTTP calls.
+PASS: signed APK/AAB build; same RSA-4096 release certificate as 1.3.2;
+      APK v2/v3 signatures and AAB JAR signature verify.
+PASS: full Android lint, 0 errors. Java scanner self-test passes.
+      Gradle testReleaseUnitTest reports NO-SOURCE (no separate JUnit test source).
+PASS: Windows executable, server, launcher and Windows ZIP build.
+
+PASS: capacity restore of 50,000 items and 2,000 places; 10,000-row atomic catalog
+      import. Observed desktop timings 285ms restore and 77ms prepare/apply are
+      machine-specific checks, not guarantees for all devices.
+PASS: count expected-unit conflict and hidden-price preservation on JS/Go hosts.
+PASS: signed native Android 1.3.2 -> 2.0.0 upgrade (code 2026110301) on Android 16
+      emulator. firstInstallTime 2026-09-19 22:29:35 preserved; existing demo 12
+      positions, 14 movements and 133,863 RUB valuation remain. Version 2.0.0 shown
+      in settings. Final APK reinstalled after last source fix successfully.
+PASS: native scanner opened, focus tapped and closed3 times without a fatal
+      exception. Native implementation unchanged in later domain-only fix.
+PASS: final signed app loaded on phone 1080x2400 and tablet portrait 1600x2560;
+      landscape 2560x1600 also checked. Device sizes/density restored; the QA
+      emulator was stopped without wiping data or saving a new snapshot.
+PASS: final APK embedded HTML exactly matches packed source, SHA-256
+      cd35076608359d6fec1a9eaa0a2fb0c8d981d9403847399590684478dbb577c0.
+
+FINAL ARTIFACT SHA-256
+APK: 2aa9ced0aa32f77807fe0849bb06e2f87c0c5b518b887334d82785a13ac7dc9a
+AAB: bca91b177e30cc97911332d23496c616248a36ad266d1608b240c5d0c57955a4
+Windows ZIP: 2c214b94193d52778038aa33c0270baa9b8133254216b820a399f6fb34a77d79
+Launcher: b611694cb83de90a9f62811d9f97a46344a2709119ba6653015e993304418c45
+
+NOT PHYSICALLY VERIFIED: real phone autofocus, actual printer, two physical
+devices on Wi-Fi. Full Android lint has 27 non-blocking warnings, 0 errors.
+No external publication has been performed for 2.0.0.

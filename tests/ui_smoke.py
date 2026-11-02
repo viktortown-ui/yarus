@@ -40,11 +40,11 @@ init();
 async def mount(browser,width=1440,height=1000):
  page=await browser.new_page(viewport={'width':width,'height':height},device_scale_factor=1)
  errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
- html=(ROOT/'web'/'index.html').read_text(encoding='utf-8').replace('<link rel="stylesheet" href="style.css">','<style>'+(ROOT/'web'/'style.css').read_text(encoding='utf-8')+'</style>')
+ html=(ROOT/'web'/'index.html').read_text(encoding='utf-8').replace('<link rel="stylesheet" href="style.css">','<style>'+(ROOT/'web'/'style.css').read_text(encoding='utf-8')+'\n'+(ROOT/'web'/'workspace.css').read_text(encoding='utf-8')+'</style>').replace('<link rel="stylesheet" href="workspace.css">','')
  html=re.sub(r'<script src="[^"]+"></script>', '', html)
  html=re.sub(r'<meta http-equiv="Content-Security-Policy"[^>]+>', '', html)
  await page.set_content(html)
- for name in ['domain.js','host.js','transfer.js','vendor/qr-encode.js','vendor/qr-decode.js','vendor/code128-patterns.js','codes.js','reports.js','scanner.js']:
+ for name in ['domain.js','transport.js','host.js','transfer.js','vendor/qr-encode.js','vendor/qr-decode.js','vendor/code128-patterns.js','codes.js','reports.js','scanner.js','workspace.js']:
   await page.add_script_tag(content=(ROOT/'web'/name).read_text(encoding='utf-8'))
  js=(ROOT/'web'/'app.js').read_text(encoding='utf-8');assert js.rstrip().endswith('init();');js=js.rstrip()[:-7]+ADAPTER
  await page.add_script_tag(content=js)

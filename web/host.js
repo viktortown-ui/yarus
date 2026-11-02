@@ -51,7 +51,7 @@
   const items=copy(state.items);
   if(!allowed(user,'view_prices'))for(const item of Object.values(items))item.price=0;
   const events=all?copy(state.events):copy(D.recentEvents(state,1000));
-  return {format:'yarus-data',version:2,seq:state.seq,space:copy(state.space),host:copy(state.host),items,places:copy(state.places),stocks:copy(state.stocks),historySegments:all?copy(state.historySegments||[]):null,events,eventCount:D.historyCount(state),me:{id:user.id,name:user.name,login:user.login,role:user.role,permissions:effective(user)},serverTime:new Date().toISOString(),limits:{items:5000,places:200}};
+  return {format:'yarus-data',version:2,seq:state.seq,space:copy(state.space),host:copy(state.host),items,places:copy(state.places),stocks:copy(state.stocks),historySegments:all?copy(state.historySegments||[]):null,events,eventCount:D.historyCount(state),me:{id:user.id,name:user.name,login:user.login,role:user.role,permissions:effective(user)},serverTime:new Date().toISOString(),limits:{...D.LIMITS},capabilities:{batch:true,catalogImport:true}};
  }
  function persist(next=state){
   cleanExpired(next);if(!root.AndroidFiles?.saveHostState)error('Защищённое хранилище Android недоступно.',503);
@@ -128,7 +128,7 @@
  }
  async function route(request){
   if(!state)load();const path=String(request.path||'').split('?')[0],method=String(request.method||'GET').toUpperCase();
-  if(path==='/api/info'&&method==='GET')return {status:200,body:{version:APP_VERSION,ready:!!state,name:'ЯРУС',host:state?copy(state.host):null}};
+  if(path==='/api/info'&&method==='GET')return {status:200,body:{version:APP_VERSION,ready:!!state,name:'ЯРУС',host:state?copy(state.host):null,capabilities:{batch:true,catalogImport:true}}};
   if(!state)error('Главный склад на этом устройстве ещё не создан.',404);
   if(path==='/api/secure'&&method==='POST')return secureRoute(request);
   if(!isLoopback(request.remote)&&!request.secure)error('Для HTTP нужен код безопасного подключения из нового QR-приглашения.',426);

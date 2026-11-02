@@ -1,9 +1,9 @@
-ЧЕК-ЛИСТ ПУБЛИКАЦИИ RUSTORE — ЯРУС 1.3.2
+ЧЕК-ЛИСТ ПОДГОТОВКИ RUSTORE — ЯРУС 2.0.0 CANDIDATE
 
 ПОДГОТОВЛЕНО СБОРКОЙ
 [x] package id: ru.viktortown.yarus
-[x] versionName: 1.3.2
-[x] versionCode: 2026100201
+[x] versionName: 2.0.0
+[x] versionCode: 2026110301
 [x] minSdk 24 / targetSdk 36
 [x] постоянный release-ключ сохранён вне проекта
 [x] подписанные APK и AAB, публичный PEM-сертификат

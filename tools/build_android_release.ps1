@@ -1,5 +1,7 @@
 param(
-    [string]$SigningDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) 'yarus-private-signing')
+    [string]$SigningDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) 'yarus-private-signing'),
+    [switch]$Offline,
+    [switch]$Incremental
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,7 +40,11 @@ $env:YARUS_KEY_PASSWORD = $secrets.keyPassword
 
 try {
     Push-Location $android
-    & .\gradlew.bat --offline --no-daemon clean assembleRelease bundleRelease
+    $gradleArgs = @('--no-daemon')
+    if (-not $Incremental) { $gradleArgs += 'clean' }
+    $gradleArgs += @('assembleRelease', 'bundleRelease')
+    if ($Offline) { $gradleArgs = @('--offline') + $gradleArgs }
+    & .\gradlew.bat @gradleArgs
     if ($LASTEXITCODE -ne 0) { throw 'Android release build failed.' }
 } finally {
     Pop-Location
@@ -50,16 +56,11 @@ try {
 
 $output = Join-Path $root 'dist\android'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-$apk = Join-Path $output 'YARUS-1.3.2-RuStore.apk'
-$aab = Join-Path $output 'YARUS-1.3.2-RuStore.aab'
+$apk = Join-Path $output 'YARUS-2.0.0-RuStore.apk'
+$aab = Join-Path $output 'YARUS-2.0.0-RuStore.aab'
 $certificate = Join-Path $output 'YARUS-upload-certificate.pem'
-# Do not leave an obsolete installable beside the current release: it is too
-# easy to send the wrong APK from Explorer. Only generated release artifacts
-# are removed; signing material and application data are outside this folder.
-Get-ChildItem -LiteralPath $output -File | Where-Object {
-    $_.Name -match '^YARUS-.+-RuStore\.(apk|aab)$' -and
-    $_.FullName -notin @($apk, $aab)
-} | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+# Historical builds stay available for upgrade checks and rollback comparisons.
+# The distribution script selects the exact current filenames explicitly.
 Copy-Item -LiteralPath (Join-Path $android 'app\build\outputs\apk\release\app-release.apk') -Destination $apk -Force
 Copy-Item -LiteralPath (Join-Path $android 'app\build\outputs\bundle\release\app-release.aab') -Destination $aab -Force
 

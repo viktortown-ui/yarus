@@ -1,16 +1,17 @@
 param(
-    [string]$OutputRoot = 'D:\Yrus_sklad'
+    [string]$OutputRoot = 'D:\Yrus_sklad',
+    [switch]$PublishConvenience
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '1.3.2'
+$version = '2.0.0'
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
 $outputBase = [IO.Path]::GetFullPath($OutputRoot).TrimEnd('\')
-$ready = [IO.Path]::GetFullPath((Join-Path $outputBase "YARUS-$version-READY"))
+$ready = [IO.Path]::GetFullPath((Join-Path $outputBase "YARUS-$version-CANDIDATE"))
 
 if (-not $ready.StartsWith($outputBase + '\', [StringComparison]::OrdinalIgnoreCase) -or
-    [IO.Path]::GetFileName($ready) -ne "YARUS-$version-READY") {
+    [IO.Path]::GetFileName($ready) -ne "YARUS-$version-CANDIDATE") {
     throw 'Unsafe output path.'
 }
 
@@ -22,6 +23,7 @@ $required = @(
     (Join-Path $dist "YARUS-$version-RuStore-submission.zip"),
     (Join-Path $dist 'RuStore'),
     (Join-Path $dist 'YARUS-LAUNCHER.exe'),
+    (Join-Path $dist 'YARUS.html'),
     (Join-Path $root "docs\ИНСТРУКЦИЯ-$version.html"),
     (Join-Path $root "docs\YARUS-$version-stock-report-example.pdf")
 )
@@ -46,9 +48,10 @@ $store = Join-Path $ready '03-RuStore'
 $documents = Join-Path $ready '04-Документы'
 $sources = Join-Path $ready '05-Исходники'
 $publish = Join-Path $ready '06-Публикация'
+$web = Join-Path $ready '07-Web'
 $github = Join-Path $publish 'GitHub-Release'
 $yandexStage = Join-Path $publish "YARUS-$version-для-Яндекс-Диска"
-New-Item -ItemType Directory -Force -Path $windows,$android,$store,$documents,$sources,$github,$yandexStage | Out-Null
+New-Item -ItemType Directory -Force -Path $windows,$android,$store,$documents,$sources,$github,$yandexStage,$web | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $dist "windows\YARUS-$version-Windows-x64") -Destination $windows -Recurse
 Copy-Item -LiteralPath (Join-Path $dist "windows\YARUS-$version-Windows-x64.zip") -Destination $windows
@@ -57,20 +60,21 @@ Copy-Item -LiteralPath (Join-Path $dist 'RuStore') -Destination $store -Recurse
 Copy-Item -LiteralPath (Join-Path $dist "YARUS-$version-RuStore-submission.zip") -Destination $store
 Copy-Item -LiteralPath (Join-Path $dist 'YARUS-LAUNCHER.exe') -Destination (Join-Path $ready "ЗАПУСТИТЬ ЯРУС $version.exe")
 Copy-Item -LiteralPath (Join-Path $dist "android\YARUS-$version-RuStore.apk") -Destination (Join-Path $ready "УСТАНОВИТЬ НА ТЕЛЕФОН ЯРУС $version.apk")
-Copy-Item -LiteralPath (Join-Path $root 'docs\ОТКРОЙТЕ-СНАЧАЛА.txt') -Destination $ready
+Copy-Item -LiteralPath (Join-Path $root "docs\ОТКРОЙТЕ-СНАЧАЛА-$version.txt") -Destination (Join-Path $ready 'ОТКРОЙТЕ-СНАЧАЛА.txt')
+Copy-Item -LiteralPath (Join-Path $dist 'YARUS.html') -Destination $web
+Copy-Item -LiteralPath (Join-Path $root 'docs\WEB-ЛОКАЛЬНО.txt') -Destination (Join-Path $web 'ОТКРОЙТЕ-СНАЧАЛА.txt')
 
-# Convenience copies beside all READY folders prevent an old Android APK or launcher
-# from being selected accidentally. Used READY folders are intentionally not deleted.
-Get-ChildItem -LiteralPath $outputBase -File | Where-Object {
-    ($_.Name -match '^УСТАНОВИТЬ-НА-ТЕЛЕФОН-ЯРУС-.+\.apk$' -and $_.Name -ne "УСТАНОВИТЬ-НА-ТЕЛЕФОН-ЯРУС-$version.apk") -or
-    ($_.Name -match '^ЗАПУСТИТЬ ЯРУС .+\.exe$' -and $_.Name -ne "ЗАПУСТИТЬ ЯРУС $version.exe") -or
-    ($_.Name -match '^YARUS-.+-для-Яндекс-Диска\.zip$' -and $_.Name -ne "YARUS-$version-для-Яндекс-Диска.zip")
-} | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
-Copy-Item -LiteralPath (Join-Path $dist "android\YARUS-$version-RuStore.apk") -Destination (Join-Path $outputBase "УСТАНОВИТЬ-НА-ТЕЛЕФОН-ЯРУС-$version.apk") -Force
-Copy-Item -LiteralPath (Join-Path $dist 'YARUS-LAUNCHER.exe') -Destination (Join-Path $outputBase "ЗАПУСТИТЬ ЯРУС $version.exe") -Force
+# Candidates are isolated by default. Existing stable launchers and APKs remain intact.
+if ($PublishConvenience) {
+    Copy-Item -LiteralPath (Join-Path $dist "android\YARUS-$version-RuStore.apk") -Destination (Join-Path $outputBase "УСТАНОВИТЬ-НА-ТЕЛЕФОН-ЯРУС-$version.apk") -Force
+    Copy-Item -LiteralPath (Join-Path $dist 'YARUS-LAUNCHER.exe') -Destination (Join-Path $outputBase "ЗАПУСТИТЬ ЯРУС $version.exe") -Force
+}
 
-foreach ($name in @('АРХИТЕКТУРА.md','ВОССТАНОВЛЕНИЕ.md','ПРОВЕРКИ.md',"release-$version-tests.txt",'privacy-policy.html','downloads.html',"ИНСТРУКЦИЯ-$version.html","YARUS-$version-stock-report-example.pdf")) {
+foreach ($name in @('АРХИТЕКТУРА.md','ВОССТАНОВЛЕНИЕ.md',"MODERNIZATION-$version.md","release-$version-tests.txt",'privacy-policy.html',"ИНСТРУКЦИЯ-$version.html","YARUS-$version-stock-report-example.pdf")) {
     Copy-Item -LiteralPath (Join-Path $root "docs\$name") -Destination $documents
+}
+if (Test-Path -LiteralPath (Join-Path $dist 'QA')) {
+    Copy-Item -LiteralPath (Join-Path $dist 'QA') -Destination (Join-Path $documents 'Скриншоты-проверки') -Recurse
 }
 
 # Package the exact working source without ignored build caches, generated output or private keys.
@@ -96,8 +100,8 @@ Compress-Archive -LiteralPath $sourceFolder -DestinationPath $sourceZip -Compres
 # Public release files: ready for a future GitHub Release, but this script does not upload anything.
 Copy-Item -LiteralPath (Join-Path $dist "windows\YARUS-$version-Windows-x64.zip") -Destination $github
 Copy-Item -LiteralPath (Join-Path $dist "android\YARUS-$version-RuStore.apk") -Destination (Join-Path $github "YARUS-$version-Android.apk")
-Copy-Item -LiteralPath (Join-Path $root 'rustore\03-release-notes.txt') -Destination (Join-Path $github 'RELEASE-NOTES.txt')
-Copy-Item -LiteralPath (Join-Path $root 'docs\ОТКРОЙТЕ-СНАЧАЛА.txt') -Destination (Join-Path $github 'START-HERE-RU.txt')
+Copy-Item -LiteralPath (Join-Path $root "docs\RELEASE-NOTES-$version.txt") -Destination (Join-Path $github 'RELEASE-NOTES.txt')
+Copy-Item -LiteralPath (Join-Path $root "docs\ОТКРОЙТЕ-СНАЧАЛА-$version.txt") -Destination (Join-Path $github 'START-HERE-RU.txt')
 $publicFiles = Get-ChildItem -LiteralPath $github -File | Where-Object Name -ne 'SHA256SUMS.txt'
 $publicFiles | Get-FileHash -Algorithm SHA256 | Sort-Object Path | ForEach-Object {
     "$($_.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($_.Path))"

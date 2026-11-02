@@ -1,31 +1,31 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
-$version = '1.3.2'
+$version = '2.0.0'
 $folder = Join-Path $dist "windows\YARUS-$version-Windows-x64"
 $zip = Join-Path $dist "windows\YARUS-$version-Windows-x64.zip"
 $output = Join-Path $dist 'windows'
 
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-Get-ChildItem -LiteralPath $output -File | Where-Object {
-    $_.Name -match '^YARUS-.+-Windows-x64\.zip$' -and $_.FullName -ne $zip
-} | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
-Get-ChildItem -LiteralPath $output -Directory | Where-Object {
-    $_.Name -match '^YARUS-.+-Windows-x64$' -and $_.FullName -ne $folder
-} | ForEach-Object {
-    $used = @(
-        (Join-Path $_.FullName 'data\yarus.journal'),
-        (Join-Path $_.FullName 'data\yarus.key'),
-        (Join-Path $_.FullName 'YARUS.exe.WebView2')
-    ) | Where-Object { Test-Path -LiteralPath $_ }
-    if ($used.Count -eq 0) { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
-    else { Write-Warning "Старая папка $($_.Name) использовалась и сохранена вместе с данными." }
-}
+# Preserve previous release folders and archives for safe upgrade testing.
 
 & (Join-Path $PSScriptRoot 'build_windows.ps1')
 if ($LASTEXITCODE -ne 0) { throw 'Windows build failed.' }
 
-if (Test-Path -LiteralPath $folder) { Remove-Item -LiteralPath $folder -Recurse -Force }
+if (Test-Path -LiteralPath $folder) {
+    $used = @(
+        (Join-Path $folder 'data\yarus.journal'),
+        (Join-Path $folder 'data\yarus.key'),
+        (Join-Path $folder 'data\desktop-webview'),
+        (Join-Path $folder 'YARUS.exe.WebView2')
+    ) | Where-Object { Test-Path -LiteralPath $_ }
+    if ($used.Count) { throw "Папка $folder уже содержит рабочие данные. Сборка остановлена без их изменения." }
+    $resolvedFolder = [IO.Path]::GetFullPath($folder)
+    $resolvedOutput = [IO.Path]::GetFullPath($output).TrimEnd('\')
+    if (-not $resolvedFolder.StartsWith($resolvedOutput + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($resolvedFolder) -ne "YARUS-$version-Windows-x64") { throw 'Unsafe package folder.' }
+    Remove-Item -LiteralPath $resolvedFolder -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path (Join-Path $folder 'data'),(Join-Path $folder 'licenses') | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $dist 'YARUS.exe') -Destination $folder

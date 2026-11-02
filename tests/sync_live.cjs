@@ -97,6 +97,20 @@ function quantity(state, item, place = '') {
     assert.equal(repeated.duplicate, true, 'server did not identify retry');
     assert.equal(quantity(first.state, 'sync-item'), 3000);
     assert.equal(quantity(repeated.state, 'sync-item'), 3000, 'retry duplicated stock movement');
+    assert.equal(repeated.state.capabilities.batch,true);
+    assert.equal(repeated.state.capabilities.catalogImport,true);
+    const imported={id:id(),type:'catalog-import',items:[{id:'sync-item-second',name:'Вторая позиция документа',sku:'SYNC-002',barcode:'',category:'Тест',unit:'шт',min:1000,price:0,note:'',fields:{},archived:false,version:0}]};
+    await api(base,'/api/command',imported,ownerToken);
+    assert.equal((await api(base,'/api/command',imported,ownerToken)).duplicate,true);
+    const document={id:id(),type:'batch',note:'Приёмка по документу',ref:'DOC-2.0',commands:[{id:id(),type:'in',itemId:'sync-item',to:'main-place',qty:1000},{id:id(),type:'in',itemId:'sync-item-second',to:'main-place',qty:2000}]};
+    const documentFirst=await api(base,'/api/command',document,workerToken);
+    const documentRetry=await api(base,'/api/command',document,workerToken);
+    assert.equal(documentRetry.duplicate,true);
+    assert.equal(quantity(documentFirst.state,'sync-item'),4000);
+    assert.equal(quantity(documentRetry.state,'sync-item-second'),2000);
+    const failedDocument={id:id(),type:'batch',commands:[{id:id(),type:'out',itemId:'sync-item',from:'main-place',qty:1000},{id:id(),type:'count',itemId:'sync-item-second',to:'main-place',qty:0,expected:0,note:'Устаревший пересчёт'}]};
+    await assert.rejects(()=>api(base,'/api/command',failedDocument,workerToken));
+    assert.equal(quantity(await api(base,'/api/state',undefined,ownerToken),'sync-item'),4000,'failed document partially wrote stock');
     await stop(process.child);
 
     const secondPort = await freePort();
@@ -104,11 +118,13 @@ function quantity(state, item, place = '') {
     process = launch(secondPort);
     await waitUntil(async () => { try { return (await api(secondBase, '/api/info')).ready; } catch { return false; } });
     const restored = await api(secondBase, '/api/state', undefined, ownerToken);
-    assert.equal(quantity(restored, 'sync-item'), 3000, 'restart lost durable stock');
+    assert.equal(quantity(restored, 'sync-item'), 4000, 'restart lost durable stock');
+    assert.equal(quantity(restored,'sync-item-second'),2000,'restart lost imported item or document row');
     assert.ok(fs.statSync(path.join(DATA, 'yarus.journal')).size > 0);
     console.log('PASS: two authenticated clients share one stock');
     console.log('PASS: retry after a lost acknowledgement is applied exactly once');
     console.log('PASS: journal and sessions survive a real server restart');
+    console.log('PASS: atomic multi-line documents and catalog imports retry once and survive restart; stale count rolls back all rows');
   } finally {
     await stop(process.child).catch(() => {});
   }

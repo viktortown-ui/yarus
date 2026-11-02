@@ -2,6 +2,7 @@
 (function(root){
  'use strict';
  const MAX_QTY=1e12,MAX_PRICE=10_000_000_000_000,HISTORY_SEGMENT_SIZE=5000,RECENT_COMMAND_LIMIT=10000,UNITS=['шт','кг','г','л','мл','м','м²','м³','упак','компл','т'];
+ const LIMITS=Object.freeze({items:50000,places:2000,importRows:10000,batchRows:500,fields:24});
  const PERMISSIONS=['catalog','places','stock','reverse','settings','team','full_export','backup','view_prices','host_transfer'];
  const ROLE_PERMISSIONS={
   owner:[...PERMISSIONS],
@@ -33,7 +34,13 @@
  function can(actor,permission){return !!permissionsFor(actor)[permission];}
  function requirePermission(actor,permission,message){if(!can(actor,permission))fail(message||'Недостаточно прав для этого действия.');}
  const key=(item,place)=>item+'@'+place;
- function total(s,id,place=''){return Object.values(s.stocks).filter(x=>x.item===id&&(!place||x.place===place)).reduce((v,x)=>v+x.qty,0);}
+ const totalsCache=new WeakMap();
+ function total(s,id,place=''){
+  if(place){const stock=s.stocks[key(id,place)];if(stock)return stock.qty;}
+  let totals=totalsCache.get(s.stocks);
+  if(!totals){totals=new Map();for(const x of Object.values(s.stocks)){totals.set(x.item,(totals.get(x.item)||0)+x.qty);totals.set(key(x.item,x.place),x.qty);}totalsCache.set(s.stocks,totals);}
+  return totals.get(place?key(id,place):id)||0;
+ }
  function historyCount(s){return (Array.isArray(s.historySegments)?s.historySegments.reduce((n,segment)=>n+(Array.isArray(segment)?segment.length:0),0):0)+(Array.isArray(s.events)?s.events.length:0);}
  function eachEvent(s,visit){for(const segment of (s.historySegments||[]))for(const event of segment)if(visit(event)===false)return false;for(const event of (s.events||[]))if(visit(event)===false)return false;return true;}
  function historySome(s,predicate){let found=false;eachEvent(s,event=>{if(predicate(event)){found=true;return false;}});return found;}
@@ -49,29 +56,58 @@
  function appendEvent(s,event){normalizeHistory(s);if(s.events.length>=HISTORY_SEGMENT_SIZE){s.historySegments=[...s.historySegments,s.events];s.events=[];}s.events.push(event);s.eventCount=historyCount(s);}
  function rememberRecent(target,key,value){target[key]=value;const keys=Object.keys(target);for(let index=0;index<keys.length-RECENT_COMMAND_LIMIT;index++)delete target[keys[index]];}
  function workingCopy(state){const archived=Array.isArray(state.historySegments)?state.historySegments:[],s=copy({...state,historySegments:[]});s.historySegments=archived;return normalizeHistory(s);}
- function validateItem(s,item){
+ function validateItem(s,item,index=null){
   const x=copy(item);x.name=(x.name||'').trim();x.sku=(x.sku||'').trim();x.barcode=(x.barcode||'').trim();x.category=(x.category||'').trim();x.note=x.note||'';x.fields=x.fields||{};x.archived=!!x.archived;
-  if(!validId(x.id)||!x.name||!text(x.name,150)||!text(x.sku,80)||!text(x.barcode,80)||!text(x.category,80)||!text(x.note,2000)||!UNITS.includes(x.unit)||!Number.isSafeInteger(x.min)||x.min<0||x.min>MAX_QTY||!Number.isSafeInteger(x.price)||x.price<0||x.price>MAX_PRICE||Object.keys(x.fields).length>12)fail('Проверьте карточку: название, единица, минимум и цена обязательны.');
+  if(!validId(x.id)||!x.name||!text(x.name,150)||!text(x.sku,80)||!text(x.barcode,80)||!text(x.category,80)||!text(x.note,2000)||!UNITS.includes(x.unit)||!Number.isSafeInteger(x.min)||x.min<0||x.min>MAX_QTY||!Number.isSafeInteger(x.price)||x.price<0||x.price>MAX_PRICE||Object.keys(x.fields).length>LIMITS.fields)fail('Проверьте карточку: название, единица, минимум и цена обязательны.');
   for(const [k,v] of Object.entries(x.fields))if(!k.trim()||!text(k,40)||!text(v,160))fail('Дополнительное поле: до 40 символов в названии и 160 в значении.');
   const old=s.items[x.id];if(old&&x.version!==old.version)fail('Карточка уже изменилась. Откройте её заново.');
-  if(!old&&Object.keys(s.items).length>=5000)fail('Лимит этой версии — 5000 товаров.');
+  if(!old&&(index?index.count:Object.keys(s.items).length)>=LIMITS.items)fail('Лимит — 50 000 товаров.');
   if(old&&old.unit!==x.unit&&historySome(s,e=>e.item===x.id))fail('Единицу товара с историей менять нельзя. Создайте другую карточку.');
-  for(const y of Object.values(s.items))if(y.id!==x.id&&((x.sku&&y.sku.toLowerCase()===x.sku.toLowerCase())||(x.barcode&&y.barcode.toLowerCase()===x.barcode.toLowerCase())))fail('Артикул или штрихкод уже есть, включая архив.');
+  if(index){if(x.sku&&index.skus.has(x.sku.toLowerCase())||x.barcode&&index.barcodes.has(x.barcode.toLowerCase()))fail('Артикул или штрихкод уже есть, включая архив.');}
+  else for(const y of Object.values(s.items))if(y.id!==x.id&&((x.sku&&y.sku.toLowerCase()===x.sku.toLowerCase())||(x.barcode&&y.barcode.toLowerCase()===x.barcode.toLowerCase())))fail('Артикул или штрихкод уже есть, включая архив.');
   if(x.archived&&total(s,x.id)!==0)fail('Сначала обнулите остатки во всех местах.');
   x.version=(old?.version||0)+1;return x;
  }
+ function catalogIndex(s){const result={count:Object.keys(s.items).length,skus:new Set(),barcodes:new Set()};for(const item of Object.values(s.items)){if(item.sku)result.skus.add(item.sku.toLowerCase());if(item.barcode)result.barcodes.add(item.barcode.toLowerCase());}return result;}
+ function importedItems(s,items){
+  if(!Array.isArray(items)||!items.length||items.length>LIMITS.importRows)fail('Импорт должен содержать от 1 до 10 000 карточек.');
+  if(Object.keys(s.items).length+items.length>LIMITS.items)fail('После импорта будет больше 50 000 товаров.');
+  const index=catalogIndex(s),ids=new Set(),checked=[];
+  for(const item of items){
+   if(!item||item.version!==0||s.items[item.id]||ids.has(item.id))fail('Импорт добавляет только новые карточки. Повторяется идентификатор товара.');
+   const value=validateItem(s,item,index);ids.add(value.id);index.count++;if(value.sku)index.skus.add(value.sku.toLowerCase());if(value.barcode)index.barcodes.add(value.barcode.toLowerCase());checked.push(value);
+  }
+  return checked;
+ }
+ function prepareCatalogImport(s,items){return importedItems(s,items).map(item=>({...item,version:0}));}
  function execute(state,c,actor=state.me){
   if(!validId(c.id))fail('Некорректный идентификатор операции.');
   const s=workingCopy(state);s.localSeen=s.localSeen||{};const intent=JSON.stringify(c);
   if(s.localSeen[c.id]){if(s.localSeen[c.id]!==intent)fail('Этот номер уже использован другой операцией.');return s;}
+  if(c.type==='catalog-import'){
+   requirePermission(actor,'catalog','У вас нет права изменять каталог.');
+   const items=can(actor,'view_prices')?c.items:(Array.isArray(c.items)?c.items.map(item=>({...item,price:0})):c.items);
+   for(const item of importedItems(s,items))s.items[item.id]=item;
+  }else if(c.type==='batch'){
+   if(!Array.isArray(c.commands)||!c.commands.length||c.commands.length>LIMITS.batchRows)fail('Документ должен содержать от 1 до 500 строк.');
+   if(!text(c.note||'',1000)||!text(c.ref||'',100))fail('Слишком длинное примечание или номер документа.');
+   const used=new Set([c.id]);eachEvent(state,event=>{used.add(event.id);});
+   for(const row of c.commands){
+    if(!row||!validId(row.id)||used.has(row.id)||!['in','out','transfer','count'].includes(row.type))fail('В документе повторяется строка или указан недопустимый вид движения.');
+    used.add(row.id);applyCommand(s,{...row,note:row.note||c.note||'',ref:row.ref||c.ref||c.id},actor);
+   }
+  }else applyCommand(s,c,actor);
+  s.seq++;rememberRecent(s.localSeen,c.id,intent);return s;
+ }
+ function applyCommand(s,c,actor){
   if(!text(c.note||'',1000)||!text(c.ref||'',100))fail('Слишком длинное примечание.');
-  if(c.type==='item'){requirePermission(actor,'catalog','У вас нет права изменять каталог.');const x=validateItem(s,c.item);s.items[x.id]=x;}
+  if(c.type==='item'){requirePermission(actor,'catalog','У вас нет права изменять каталог.');const item=can(actor,'view_prices')?c.item:{...c.item,price:s.items[c.item?.id]?.price||0},x=validateItem(s,item);s.items[x.id]=x;}
   else if(c.type==='place'){
    requirePermission(actor,'places','У вас нет права изменять места хранения.');
    const x=copy(c.place);x.name=(x.name||'').trim();x.note=x.note||'';
    if(!validId(x.id)||!x.name||!text(x.name,100)||!text(x.note,200))fail('Укажите название места до 100 символов.');
    if((s.places[x.id]?.version||0)!==x.version)fail('Место уже изменилось.');
-   if(!s.places[x.id]&&Object.keys(s.places).length>=200)fail('Лимит — 200 мест.');
+   if(!s.places[x.id]&&Object.keys(s.places).length>=LIMITS.places)fail('Лимит — 2000 мест.');
    if(Object.values(s.places).some(p=>p.id!==x.id&&p.name.toLowerCase()===x.name.toLowerCase()))fail('Такое место уже существует.');x.version++;s.places[x.id]=x;
   }else if(c.type==='space'){
    requirePermission(actor,'settings','У вас нет права менять настройки склада.');
@@ -95,6 +131,7 @@
      e.changes=[{item:c.itemId,place:c.from,qty:-c.qty},{item:c.itemId,place:c.to,qty:c.qty}];
     }
     if(c.type==='count'){
+     if(c.expectedUnit&&c.expectedUnit!==item.unit)fail('Единица учёта изменилась после начала пересчёта. Начните новый пересчёт.');
      const old=s.stocks[key(c.itemId,c.to)]||{qty:0,version:0};
      if(old.version!==c.expected)fail('Остаток изменился во время пересчёта. Откройте пересчёт заново.');
      if(!(c.note||'').trim())fail('Укажите причину пересчёта.');
@@ -108,9 +145,9 @@
     if(old.qty+d.qty>MAX_QTY)fail('Превышен максимальный остаток.');
     s.stocks[key(d.item,d.place)]={...old,qty:old.qty+d.qty,version:old.version+1};
    }
+   totalsCache.delete(s.stocks);
    appendEvent(s,e);
   }else fail('Неизвестный вид операции.');
-  s.seq++;rememberRecent(s.localSeen,c.id,intent);return s;
  }
  function validateBackup(raw){
   if(!raw||raw.format!=='yarus-data'||![1,2].includes(raw.version)||!raw.space||typeof raw.items!=='object'||typeof raw.places!=='object'||!Array.isArray(raw.events)||!raw.stocks)fail('Это не резервная копия ЯРУС.');
@@ -121,13 +158,14 @@
   const s=createState(raw.space.name,false);s.space=copy(raw.space);if(s.space.id&&!validId(s.space.id))fail('Повреждён идентификатор склада.');s.space.id=s.space.id||newId();
   if(!text(s.space.name,80)||!s.space.name.trim()||!['RUB','USD','EUR'].includes(s.space.currency))fail('Повреждены настройки склада.');
   s.places={};
-  if(Object.keys(raw.places).length<1||Object.keys(raw.places).length>200||Object.keys(raw.items).length>5000)fail('Превышены ограничения копии.');
+  if(Object.keys(raw.places).length<1||Object.keys(raw.places).length>LIMITS.places||Object.keys(raw.items).length>LIMITS.items)fail('Превышены ограничения копии.');
   for(const [id,p] of Object.entries(raw.places)){
    if(id!==p.id||!validId(id)||!text(p.name,100)||!p.name.trim()||!text(p.note||'',200)||!Number.isInteger(p.version)||p.version<1)fail('Повреждено место хранения.');s.places[id]=copy(p);
   }
+  const catalogIndex={count:0,skus:new Set(),barcodes:new Set()};
   for(const [id,x] of Object.entries(raw.items)){
    if(id!==x.id||!Number.isInteger(x.version)||x.version<1)fail('Повреждена карточка.');
-   const checked=validateItem(s,{...x,archived:false});checked.version=x.version;checked.archived=!!x.archived;s.items[id]=checked;
+   const checked=validateItem(s,{...x,archived:false},catalogIndex);checked.version=x.version;checked.archived=!!x.archived;s.items[id]=checked;catalogIndex.count++;if(checked.sku)catalogIndex.skus.add(checked.sku.toLowerCase());if(checked.barcode)catalogIndex.barcodes.add(checked.barcode.toLowerCase());
   }
   const ids=new Set();s.stocks={};
   const source={historySegments:segments,events:raw.events};
@@ -159,6 +197,6 @@
   if(quoted)fail('В CSV не закрыты кавычки.');row.push(cell);if(row.some(x=>x.trim()))rows.push(row);return rows;
  }
  function csvCell(value){let s=String(value??'');if(/^[\s]*[=+\-@]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}
- const api={MAX_QTY,MAX_PRICE,HISTORY_SEGMENT_SIZE,RECENT_COMMAND_LIMIT,UNITS,PERMISSIONS,ROLE_PERMISSIONS,copy,validId,decimal,createState,newId,key,total,historyCount,allEvents,recentEvents,historySome,findEvent,countEvents,normalizeHistory,permissionsFor,can,execute,validateBackup,parseCSV,csvCell};
+ const api={MAX_QTY,MAX_PRICE,HISTORY_SEGMENT_SIZE,RECENT_COMMAND_LIMIT,LIMITS,UNITS,PERMISSIONS,ROLE_PERMISSIONS,copy,validId,decimal,createState,newId,key,total,historyCount,allEvents,recentEvents,historySome,findEvent,countEvents,normalizeHistory,permissionsFor,can,execute,prepareCatalogImport,validateBackup,parseCSV,csvCell};
  if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.YarusDomain=api;
 })(typeof window!=='undefined'?window:globalThis);

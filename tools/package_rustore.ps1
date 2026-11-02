@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing.Common -ErrorAction Stop
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
-$version = '1.3.2'
+$version = '2.0.0'
 $target = Join-Path $dist 'RuStore'
 $binaries = Join-Path $target 'binaries'
 $icon = Join-Path $target 'icon'
@@ -49,6 +49,7 @@ Copy-Item -LiteralPath (Join-Path $root "docs\ИНСТРУКЦИЯ-$version.html
 $phoneCount = @(Get-ChildItem -LiteralPath (Join-Path $target 'screenshots\phone') -Filter '*.png').Count
 $tabletCount = @(Get-ChildItem -LiteralPath (Join-Path $target 'screenshots\tablet') -Filter '*.png').Count
 if ($phoneCount -lt 3 -or $tabletCount -lt 3) { throw 'RuStore needs at least three screenshots for each selected device type.' }
+if ($phoneCount -gt 10 -or $tabletCount -gt 10) { throw 'RuStore supports at most ten screenshots for each device type.' }
 if (Get-ChildItem -LiteralPath $target -Recurse -File | Where-Object { $_.Name -match 'jks|signing\.properties|PRIVATE' }) {
     throw 'Private signing material must never enter the RuStore package.'
 }
