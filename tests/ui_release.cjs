@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const SCREENSHOTS = path.join(ROOT, 'dist', 'RuStore', 'screenshots');
 const REPORT = path.join(ROOT, 'docs', 'YARUS-2.0.0-stock-report-example.pdf');
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const TABLET_ONLY = process.argv.includes('--tablet-only');
 
 const ADAPTER = `
 const mem=new Map();
@@ -57,6 +58,7 @@ async function shot(page, folder, name, selector = '') {
     } else window.scrollTo(0, 0);
     document.querySelector('#toasts').innerHTML = '';
   }, selector);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'screen must not overflow');
   await page.screenshot({ path: path.join(folder, name), fullPage: false, animations: 'disabled' });
 }
 
@@ -163,24 +165,30 @@ async function tabletShotsAndReport(browser) {
   for (const name of fs.readdirSync(folder)) {
     if (name.toLowerCase().endsWith('.png')) fs.unlinkSync(path.join(folder, name));
   }
-  const { context, page, errors } = await mount(browser, { width: 900, height: 1600 }, 1.2);
-  await shot(page, folder, '01-overview-1080x1920.png');
+  // RuStore requires tablet media in landscape. Capture the real responsive
+  // layout at 1600x900 CSS pixels, yielding 1920x1080 without image rotation.
+  const { context, page, errors } = await mount(browser, { width: 1600, height: 900 }, 1.2);
+  assert.ok(await page.locator('.workspace').evaluate(element => element.getBoundingClientRect().height >= 60), 'tablet workspace name must remain visible');
+  assert.ok(await page.locator('.nav').evaluate(element => element.getBoundingClientRect().bottom <= innerHeight), 'tablet navigation must fit the screen');
+  await shot(page, folder, '01-overview-1920x1080.png');
   await page.locator('.nav [data-nav="stock"]').click();
-  await shot(page, folder, '02-stock-1080x1920.png');
+  await shot(page, folder, '02-stock-1920x1080.png');
   await page.locator('.nav [data-nav="places"]').click();
-  await shot(page, folder, '03-places-1080x1920.png');
+  await shot(page, folder, '03-places-1920x1080.png');
   await page.locator('.nav [data-nav="history"]').click();
-  await shot(page, folder, '04-history-1080x1920.png');
+  await shot(page, folder, '04-history-1920x1080.png');
   await page.locator('.nav [data-nav="settings"]').click();
   await page.evaluate(() => { window.AndroidFiles = { portableInfo: () => JSON.stringify({ attached: false, name: '', bytes: 0 }) }; render(); });
-  await shot(page, folder, '06-portable-file-1080x1920.png', '.portable-box');
+  await shot(page, folder, '06-portable-file-1920x1080.png', '.portable-box');
   await page.locator('[data-action="export-pdf"]').click();
-  await shot(page, folder, '05-pdf-report-1080x1920.png');
-  const downloadEvent = page.waitForEvent('download');
-  await page.locator('button[form="report-form"]').click();
-  const download = await downloadEvent;
-  await download.saveAs(REPORT);
-  assert.ok(fs.readFileSync(REPORT).subarray(0, 8).toString('ascii').startsWith('%PDF-1.4'));
+  await shot(page, folder, '05-pdf-report-1920x1080.png');
+  if (!TABLET_ONLY) {
+    const downloadEvent = page.waitForEvent('download');
+    await page.locator('button[form="report-form"]').click();
+    const download = await downloadEvent;
+    await download.saveAs(REPORT);
+    assert.ok(fs.readFileSync(REPORT).subarray(0, 8).toString('ascii').startsWith('%PDF-1.4'));
+  }
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.deepEqual(errors, []);
   await context.close();
@@ -219,11 +227,11 @@ async function responsiveShelfChecks(browser) {
   fs.mkdirSync(path.dirname(REPORT), { recursive: true });
   const browser = await chromium.launch({ executablePath: EDGE, headless: true, args: ['--disable-gpu'] });
   try {
-    await phoneShots(browser);
+    if (!TABLET_ONLY) await phoneShots(browser);
     await tabletShotsAndReport(browser);
-    await responsiveShelfChecks(browser);
+    if (!TABLET_ONLY) await responsiveShelfChecks(browser);
   } finally {
     await browser.close();
   }
-  console.log('PASS: responsive phone/tablet UI, QR preview, PDF workflow and RuStore screenshots');
+  console.log(TABLET_ONLY ? 'PASS: six real landscape tablet screenshots at 1920x1080, responsive layout and no overflow' : 'PASS: responsive phone/tablet UI, QR preview, PDF workflow and RuStore screenshots');
 })().catch(error => { console.error(error); process.exitCode = 1; });
